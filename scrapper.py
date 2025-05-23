@@ -701,97 +701,315 @@ def click_run_button(page):
 
 def click_share_button(page):
     """
-    Enhanced share button click with AgentQL
+    Enhanced share button click with AgentQL - targets the share icon
     """
     print("\nAbriendo menú de compartir (AgentQL optimizado)...")
     
-    page.wait_for_load_state('networkidle', timeout=30000)
+    try:
+        page.wait_for_load_state('networkidle', timeout=20000)
+    except:
+        print("⚠️ NetworkIdle timeout, continuando...")
+    
     page.wait_for_timeout(5000)
     
-    SHARE_BUTTON_QUERY = """
-    {
-        share_button
-    }
-    """
+    # Multiple query strategies for the Share button
+    queries = [
+        # Strategy 1: Look for the share icon
+        """
+        {
+            share_button(button or element with aria-label "Share")
+        }
+        """,
+        # Strategy 2: Look for the share icon class
+        """
+        {
+            share_icon(element with class "icon-tb_share_a")
+        }
+        """,
+        # Strategy 3: Look for share navigation item
+        """
+        {
+            share_nav(element with class "mstrd-ShareNavItemContainer")
+        }
+        """,
+        # Strategy 4: Generic share element
+        """
+        {
+            share_element(clickable element containing "Share")
+        }
+        """
+    ]
     
-    response = wait_for_agentql_element(page, SHARE_BUTTON_QUERY, max_retries=3, wait_time=5)
+    response = None
+    found_element = None
     
-    if not response or not hasattr(response, 'share_button') or not response.share_button:
-        raise Exception("AgentQL no pudo encontrar el botón Compartir")
+    for i, query in enumerate(queries, 1):
+        print(f"Probando estrategia {i} para botón Share...")
+        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+        
+        if response:
+            # Try to get the element from different possible attribute names
+            possible_attrs = ['share_button', 'share_icon', 'share_nav', 'share_element']
+            
+            for attr in possible_attrs:
+                if hasattr(response, attr):
+                    element = getattr(response, attr)
+                    if element:
+                        found_element = element
+                        print(f"✓ Botón Share encontrado con estrategia {i} (atributo: {attr})")
+                        break
+            
+            if found_element:
+                break
     
-    print("✓ Botón Compartir encontrado con AgentQL")
+    if not found_element:
+        # Fallback: Use CSS selector
+        print("⚠️ AgentQL no encontró el botón, usando CSS selector...")
+        try:
+            css_selectors = [
+                '.icon-tb_share_a',
+                '[aria-label="Share"]',
+                '.mstrd-ShareNavItemContainer .mstr-nav-icon',
+                'div[role="button"][aria-label="Share"]'
+            ]
+            
+            for selector in css_selectors:
+                if page.locator(selector).count() > 0:
+                    found_element = page.locator(selector).first
+                    print(f"✓ Botón Share encontrado con CSS: {selector}")
+                    break
+            
+            if not found_element:
+                raise Exception("No se pudo encontrar el botón Share")
+                
+        except Exception as css_error:
+            raise Exception(f"Error al buscar botón Share: {css_error}")
+    
+    # Click the found element
     try:
-        response.share_button.scroll_into_view_if_needed()
-        page.wait_for_timeout(1000)
-        response.share_button.click()
+        print("Haciendo clic en el botón Share...")
+        if hasattr(found_element, 'scroll_into_view_if_needed'):
+            # It's an AgentQL element
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
+        else:
+            # It's a Playwright locator
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
         
         page.wait_for_timeout(3000)
         print("✓ Menú de compartir abierto exitosamente")
         return True
+        
     except Exception as e:
         raise Exception(f"Error al abrir menú de compartir: {e}")
 
 
 def click_export_to_excel(page):
     """
-    Enhanced Excel export with AgentQL
+    Enhanced Excel export with AgentQL - targets Export to Excel menu item
     """
     print("\nIniciando exportación a Excel (AgentQL optimizado)...")
     
     page.wait_for_timeout(3000)
     
-    EXPORT_EXCEL_QUERY = """
-    {
-        export_to_excel_button
-    }
-    """
+    # Multiple query strategies for the Export to Excel option
+    queries = [
+        # Strategy 1: Look for Export to Excel text
+        """
+        {
+            export_excel_button(clickable element with text "Export to Excel")
+        }
+        """,
+        # Strategy 2: Look for the specific container class
+        """
+        {
+            export_excel_item(element with class "mstrd-ExportExcelItemContainer")
+        }
+        """,
+        # Strategy 3: Look for Excel icon
+        """
+        {
+            excel_icon(element with class "icon-share_excel")
+        }
+        """,
+        # Strategy 4: Look for aria-label
+        """
+        {
+            excel_aria(element with aria-label "Export to Excel")
+        }
+        """
+    ]
     
-    response = wait_for_agentql_element(page, EXPORT_EXCEL_QUERY, max_retries=3, wait_time=5)
+    response = None
+    found_element = None
     
-    if not response or not hasattr(response, 'export_to_excel_button') or not response.export_to_excel_button:
-        raise Exception("AgentQL no pudo encontrar el botón Exportar a Excel")
+    for i, query in enumerate(queries, 1):
+        print(f"Probando estrategia {i} para Export to Excel...")
+        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+        
+        if response:
+            # Try to get the element from different possible attribute names
+            possible_attrs = ['export_excel_button', 'export_excel_item', 'excel_icon', 'excel_aria']
+            
+            for attr in possible_attrs:
+                if hasattr(response, attr):
+                    element = getattr(response, attr)
+                    if element:
+                        found_element = element
+                        print(f"✓ Export to Excel encontrado con estrategia {i} (atributo: {attr})")
+                        break
+            
+            if found_element:
+                break
     
-    print("✓ Botón Exportar a Excel encontrado con AgentQL")
+    if not found_element:
+        # Fallback: Use CSS selector
+        print("⚠️ AgentQL no encontró Export to Excel, usando CSS selector...")
+        try:
+            css_selectors = [
+                '.mstrd-ExportExcelItemContainer',
+                '[aria-label="Export to Excel"]',
+                '.icon-share_excel',
+                'li:has-text("Export to Excel")',
+                '.mstr-menu-content:has-text("Export to Excel")'
+            ]
+            
+            for selector in css_selectors:
+                if page.locator(selector).count() > 0:
+                    found_element = page.locator(selector).first
+                    print(f"✓ Export to Excel encontrado con CSS: {selector}")
+                    break
+            
+            if not found_element:
+                raise Exception("No se pudo encontrar Export to Excel")
+                
+        except Exception as css_error:
+            raise Exception(f"Error al buscar Export to Excel: {css_error}")
+    
+    # Click the found element
     try:
-        response.export_to_excel_button.scroll_into_view_if_needed()
-        page.wait_for_timeout(1000)
-        response.export_to_excel_button.click()
+        print("Haciendo clic en Export to Excel...")
+        if hasattr(found_element, 'scroll_into_view_if_needed'):
+            # It's an AgentQL element
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
+        else:
+            # It's a Playwright locator
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
         
         page.wait_for_timeout(5000)
         print("✓ Configuraciones de exportación cargadas exitosamente")
         return True
+        
     except Exception as e:
-        raise Exception(f"Error al exportar a Excel: {e}")
+        raise Exception(f"Error al hacer clic en Export to Excel: {e}")
 
 
 def click_final_export_button(page, headless=False):
     """
-    Enhanced final export with AgentQL
+    Enhanced final export with AgentQL - targets the Export button in settings panel
     """
     print("\nIniciando descarga del reporte (AgentQL optimizado)...")
     
     page.wait_for_timeout(3000)
     
-    FINAL_EXPORT_QUERY = """
-    {
-        export_button(This button only has Export as a text, and is inside the Export Settings)
-    }
-    """
+    # Multiple query strategies for the final Export button
+    queries = [
+        # Strategy 1: Look for Export button in settings panel
+        """
+        {
+            export_button(button with text "Export" in export settings)
+        }
+        """,
+        # Strategy 2: Look for primary button
+        """
+        {
+            primary_button(button with class "mstrd-Button--primary")
+        }
+        """,
+        # Strategy 3: Look for hot button
+        """
+        {
+            hot_button(button with class "mstrd-Button--hot")
+        }
+        """,
+        # Strategy 4: Generic export button
+        """
+        {
+            final_export(button containing "Export" text)
+        }
+        """
+    ]
     
-    response = wait_for_agentql_element(page, FINAL_EXPORT_QUERY, max_retries=3, wait_time=5)
+    response = None
+    found_element = None
     
-    if not response or not hasattr(response, 'export_button') or not response.export_button:
-        raise Exception("AgentQL no pudo encontrar el botón final de Exportar")
+    for i, query in enumerate(queries, 1):
+        print(f"Probando estrategia {i} para botón final Export...")
+        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+        
+        if response:
+            # Try to get the element from different possible attribute names
+            possible_attrs = ['export_button', 'primary_button', 'hot_button', 'final_export']
+            
+            for attr in possible_attrs:
+                if hasattr(response, attr):
+                    element = getattr(response, attr)
+                    if element:
+                        found_element = element
+                        print(f"✓ Botón final Export encontrado con estrategia {i} (atributo: {attr})")
+                        break
+            
+            if found_element:
+                break
     
-    print("✓ Botón final de Exportar encontrado con AgentQL")
+    if not found_element:
+        # Fallback: Use CSS selector for the final Export button
+        print("⚠️ AgentQL no encontró el botón final, usando CSS selector...")
+        try:
+            css_selectors = [
+                '.mstrd-Button--primary:has-text("Export")',
+                '.mstrd-Button--hot:has-text("Export")',
+                'button:has-text("Export")',
+                '.mstrd-ExportExcelDetailsPanel button',
+                'button[type="button"]:has-text("Export")'
+            ]
+            
+            for selector in css_selectors:
+                if page.locator(selector).count() > 0:
+                    found_element = page.locator(selector).first
+                    print(f"✓ Botón final Export encontrado con CSS: {selector}")
+                    break
+            
+            if not found_element:
+                raise Exception("No se pudo encontrar el botón final Export")
+                
+        except Exception as css_error:
+            raise Exception(f"Error al buscar botón final Export: {css_error}")
     
+    # Click the found element and handle download
     try:
+        print("Haciendo clic en el botón final Export...")
+        
         # Configura el listener del evento de descarga
         print("Configurando listener de descarga...")
         with page.expect_download(timeout=120000) as download_info:  # 2 minutos timeout
-            response.export_button.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            response.export_button.click()
+            if hasattr(found_element, 'scroll_into_view_if_needed'):
+                # It's an AgentQL element
+                found_element.scroll_into_view_if_needed()
+                page.wait_for_timeout(1000)
+                found_element.click()
+            else:
+                # It's a Playwright locator
+                found_element.scroll_into_view_if_needed()
+                page.wait_for_timeout(1000)
+                found_element.click()
         
         # Obtiene la información de la descarga
         print("Obteniendo información de la descarga...")
