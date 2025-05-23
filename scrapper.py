@@ -353,7 +353,11 @@ def click_catalogados_report(page):
     print("\nNavegando al reporte de Catalogados (AgentQL optimizado)...")
     
     # Wait for page stability
-    page.wait_for_load_state('networkidle', timeout=30000)
+    try:
+        page.wait_for_load_state('networkidle', timeout=30000)
+    except:
+        print("⚠️ NetworkIdle timeout, continuando...")
+    
     page.wait_for_timeout(10000)
     
     # Trigger any lazy loading
@@ -363,24 +367,87 @@ def click_catalogados_report(page):
     except:
         pass
     
-    CATALOGADOS_REPORT_QUERY = """
-    {
-        maestra_catalogados_link(clickable link for "Maestra - Catalogados" report)
-    }
-    """
+    # Multiple query strategies for the Catalogados report
+    queries = [
+        # Strategy 1: Look for the specific link structure
+        """
+        {
+            catalogados_link(link containing "Maestra - Catalogados" text)
+        }
+        """,
+        # Strategy 2: Look for dossier item with Catalogados
+        """
+        {
+            dossier_item(clickable element with class "mstrd-DossierItem-link" containing "Catalogados")
+        }
+        """,
+        # Strategy 3: Simpler approach
+        """
+        {
+            maestra_catalogados_link(clickable element for "Maestra - Catalogados")
+        }
+        """,
+        # Strategy 4: Look for any element with Catalogados text
+        """
+        {
+            catalogados_element(element containing "Catalogados" that is clickable)
+        }
+        """
+    ]
     
-    print("Buscando enlace al reporte con AgentQL...")
-    response = wait_for_agentql_element(page, CATALOGADOS_REPORT_QUERY, max_retries=3, wait_time=5)
+    response = None
+    found_element = None
     
-    if not response or not hasattr(response, 'maestra_catalogados_link') or not response.maestra_catalogados_link:
-        raise Exception("AgentQL no pudo encontrar el enlace del reporte")
+    for i, query in enumerate(queries, 1):
+        print(f"Probando estrategia {i} para encontrar reporte...")
+        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+        
+        if response:
+            # Try to get the element from different possible attribute names
+            possible_attrs = ['catalogados_link', 'dossier_item', 'maestra_catalogados_link', 'catalogados_element']
+            
+            for attr in possible_attrs:
+                if hasattr(response, attr):
+                    element = getattr(response, attr)
+                    if element:
+                        found_element = element
+                        print(f"✓ Reporte encontrado con estrategia {i} (atributo: {attr})")
+                        break
+            
+            if found_element:
+                break
+    
+    if not found_element:
+        # Final fallback: try direct navigation to the URL you provided
+        print("⚠️ No se pudo encontrar el enlace, intentando navegación directa...")
+        try:
+            # Extract the base URL and try to construct the full URL
+            current_url = page.url
+            base_url = current_url.split('/app')[0]
+            catalogados_url = f"{base_url}/app/3C07ABD2154D804FEAC41B83E17FFE6F/3E71BF3D1A44F3EB7D0FB6BE68C14C5E"
+            
+            print(f"Navegando directamente a: {catalogados_url}")
+            page.goto(catalogados_url, wait_until='domcontentloaded', timeout=60000)
+            
+            try:
+                page.wait_for_load_state('networkidle', timeout=30000)
+            except:
+                print("⚠️ NetworkIdle timeout en navegación directa, continuando...")
+            
+            page.wait_for_timeout(5000)
+            print("✓ Navegación directa al reporte exitosa")
+            return
+            
+        except Exception as direct_nav_error:
+            print(f"✗ Error en navegación directa: {direct_nav_error}")
+            raise Exception("No se pudo acceder al reporte de Catalogados con ningún método")
     
     print("✓ Enlace del reporte encontrado con AgentQL")
     print("Haciendo clic en el enlace del reporte...")
     try:
-        response.maestra_catalogados_link.scroll_into_view_if_needed()
+        found_element.scroll_into_view_if_needed()
         page.wait_for_timeout(1000)
-        response.maestra_catalogados_link.click()
+        found_element.click()
     except Exception as e:
         raise Exception(f"Error al hacer clic en el enlace del reporte: {e}")
     
