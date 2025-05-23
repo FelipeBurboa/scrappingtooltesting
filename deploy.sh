@@ -36,7 +36,7 @@ if ! command -v git &> /dev/null; then
 fi
 
 # Clone or update repository
-REPO_URL="https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git"  # Update this with your actual repo
+REPO_URL="https://github.com/FelipeBurboa/scrappingtool.git"  # Update this with your actual repo
 APP_DIR="/home/ubuntu/cencosud-scraper"
 
 if [ -d "$APP_DIR" ]; then
