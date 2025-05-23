@@ -3,3 +3,5 @@ downloads/
 env
 .venv
 __pycache__
+llaima-ml.pem
+test.http
