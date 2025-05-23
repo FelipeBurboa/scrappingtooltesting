@@ -624,7 +624,7 @@ async def scrape_and_get_catalogados_data():
 
 def start_server():
     """Inicia el servidor FastAPI"""
-    port = 8080
+    port = 8000
     uvicorn.run(
         app,
         host="0.0.0.0",
