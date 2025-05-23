@@ -624,7 +624,7 @@ async def scrape_and_get_catalogados_data():
 
 def start_server():
     """Inicia el servidor FastAPI"""
-    port = int(os.getenv("PORT", 8000))  # Railway automatically sets PORT env var
+    port = 8080
     uvicorn.run(
         app,
         host="0.0.0.0",
