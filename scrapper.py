@@ -163,8 +163,12 @@ def wait_for_agentql_element(page, query, max_retries=5, wait_time=3):
             page.wait_for_timeout(wait_time * 1000)
             page.wait_for_page_ready_state()
             
-            # Wait for network to be idle
-            page.wait_for_load_state('networkidle', timeout=30000)
+            # Wait for network to be idle (with error handling)
+            try:
+                page.wait_for_load_state('networkidle', timeout=20000)  # Reduced timeout
+            except:
+                print("⚠️ NetworkIdle timeout, continuando...")
+                page.wait_for_timeout(2000)
             
             # Query with AgentQL
             response = page.query_elements(query)
@@ -323,8 +327,13 @@ def login(headless=False):
 
     # Wait for navigation
     print("Esperando navegación después del login...")
-    page.wait_for_load_state('networkidle', timeout=30000)
-    page.wait_for_timeout(10000)
+    try:
+        page.wait_for_load_state('networkidle', timeout=60000)  # Increased to 60 seconds
+        page.wait_for_timeout(5000)  # Reduced from 10s to 5s
+    except Exception as nav_error:
+        print(f"⚠️ Timeout en navegación, pero continuando: {nav_error}")
+        # Continue anyway, login might still be successful
+        page.wait_for_timeout(5000)
 
     # Verify login success
     current_url = page.url
@@ -376,8 +385,12 @@ def click_catalogados_report(page):
         raise Exception(f"Error al hacer clic en el enlace del reporte: {e}")
     
     # Wait for navigation
-    page.wait_for_load_state('networkidle', timeout=30000)
-    page.wait_for_timeout(10000)
+    try:
+        page.wait_for_load_state('networkidle', timeout=60000)  # Increased timeout
+        page.wait_for_timeout(5000)
+    except Exception as nav_error:
+        print(f"⚠️ Timeout en navegación del reporte, continuando: {nav_error}")
+        page.wait_for_timeout(5000)
     
     print("✓ Reporte cargado exitosamente")
 
