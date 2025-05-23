@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  cencosud-scraper:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - USER_NAME=${USER_NAME}
+      - PASSWORD=${PASSWORD}
+      - AGENTQL_API_KEY=${AGENTQL_API_KEY}
+    volumes:
+      - ./downloads:/app/downloads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
