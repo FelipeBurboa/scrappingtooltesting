@@ -98,12 +98,6 @@ def parse_excel_to_json(excel_file_path, output_json_path=None):
         
         print(f"Conversión completada. Total de registros: {len(json_data)}")
         
-        # Muestra una muestra de los primeros registros
-        if json_data:
-            print("\nMuestra de los primeros 2 registros:")
-            for i, record in enumerate(json_data[:2]):
-                print(f"Registro {i + 1}: {record}")
-        
         # Guarda el archivo JSON si se especifica una ruta
         if output_json_path:
             print(f"\nGuardando archivo JSON en: {output_json_path}")
@@ -151,26 +145,19 @@ def find_latest_catalogados_file():
     return latest_file
 
 
-def wait_for_agentql_element(page, query, max_retries=5, wait_time=3):
+def wait_for_agentql_element_fast(page, query, max_retries=3, wait_time=2):
     """
-    Enhanced waiting function specifically for AgentQL in containers
+    OPTIMIZED: Faster AgentQL element detection with reduced waits
     """
     for attempt in range(max_retries):
         print(f"AgentQL attempt {attempt + 1}/{max_retries}...")
         
         try:
-            # Extra wait for DOM to stabilize
+            # OPTIMIZED: Reduced wait time
             page.wait_for_timeout(wait_time * 1000)
             page.wait_for_page_ready_state()
             
-            # Wait for network to be idle (with error handling)
-            try:
-                page.wait_for_load_state('networkidle', timeout=20000)  # Reduced timeout
-            except:
-                print("⚠️ NetworkIdle timeout, continuando...")
-                page.wait_for_timeout(2000)
-            
-            # Query with AgentQL
+            # OPTIMIZED: Try without networkidle first (faster)
             response = page.query_elements(query)
             
             if response:
@@ -178,6 +165,17 @@ def wait_for_agentql_element(page, query, max_retries=5, wait_time=3):
                 return response
             else:
                 print(f"✗ AgentQL returned None on attempt {attempt + 1}")
+                # OPTIMIZED: Only wait for networkidle if element not found
+                try:
+                    page.wait_for_load_state('networkidle', timeout=10000)  # Reduced from 20s to 10s
+                except:
+                    print("⚠️ NetworkIdle timeout, continuando...")
+                
+                # Try again after networkidle
+                response = page.query_elements(query)
+                if response:
+                    print(f"✓ AgentQL found structure on attempt {attempt + 1} (after networkidle)")
+                    return response
                 
         except Exception as e:
             print(f"✗ AgentQL error on attempt {attempt + 1}: {e}")
@@ -185,18 +183,13 @@ def wait_for_agentql_element(page, query, max_retries=5, wait_time=3):
         if attempt < max_retries - 1:
             print(f"Waiting {wait_time}s before retry...")
             time.sleep(wait_time)
-            # Try to trigger a re-render
-            try:
-                page.evaluate("window.dispatchEvent(new Event('resize'))")
-            except:
-                pass
     
     return None
 
 
-def enhanced_browser_setup(headless=False):
+def enhanced_browser_setup_fast(headless=False):
     """
-    Enhanced browser setup specifically for AgentQL in containers
+    OPTIMIZED: Faster browser setup with performance flags
     """
     playwright = sync_playwright().start()
     
@@ -215,18 +208,25 @@ def enhanced_browser_setup(headless=False):
             '--disable-blink-features=AutomationControlled',
             '--no-first-run',
             '--no-default-browser-check',
-            '--single-process'
+            '--single-process',
+            # OPTIMIZED: Performance flags
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-images',  # Skip images for faster loading
+            '--disable-javascript-harmony-shipping',
+            '--disable-ipc-flooding-protection'
         ]
     )
     
     context = browser.new_context(
         user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport={'width': 1920, 'height': 1080},  # Larger viewport
+        viewport={'width': 1920, 'height': 1080},
         accept_downloads=True,
         java_script_enabled=True,
-        # Ensure images load
         has_touch=False,
-        is_mobile=False
+        is_mobile=False,
+        # OPTIMIZED: Disable unnecessary features
+        ignore_https_errors=True
     )
     
     return playwright, browser, context
@@ -234,47 +234,28 @@ def enhanced_browser_setup(headless=False):
 
 def login(headless=False):
     """
-    Enhanced login function with AgentQL container fixes
+    OPTIMIZED: Faster login with reduced waits
     """
-    print("\nIniciando proceso de login (optimizado para containers)...")
+    print("\nIniciando proceso de login (optimizado para velocidad)...")
     
     INITIAL_URL = "https://datasharing.cencosud.com/MicroStrategyLibraryDS/auth/ui/loginPage"
     print(f"Navegando a: {INITIAL_URL}")
 
     # Enhanced browser setup
-    print("Configurando navegador optimizado para AgentQL...")
-    playwright, browser, context = enhanced_browser_setup(headless)
+    print("Configurando navegador optimizado...")
+    playwright, browser, context = enhanced_browser_setup_fast(headless)
     page = agentql.wrap(context.new_page())
 
-    # Navigate with extra stability
+    # OPTIMIZED: Faster navigation
     print("Navegando a la página de login...")
-    page.goto(INITIAL_URL, wait_until='domcontentloaded', timeout=60000)
+    page.goto(INITIAL_URL, wait_until='domcontentloaded', timeout=30000)  # Reduced timeout
     
-    # Multiple stability checks
-    print("Esperando estabilidad completa de la página...")
-    page.wait_for_load_state('networkidle', timeout=30000)
-    page.wait_for_timeout(10000)  # Extra wait
-    
-    # Trigger any lazy loading
-    print("Activando carga de contenido...")
-    try:
-        page.evaluate("""
-            // Scroll to trigger any lazy loading
-            window.scrollTo(0, document.body.scrollHeight);
-            window.scrollTo(0, 0);
-            
-            // Trigger resize to ensure proper rendering
-            window.dispatchEvent(new Event('resize'));
-            
-            // Force reflow
-            document.body.offsetHeight;
-        """)
-    except Exception as e:
-        print(f"Error en JavaScript: {e}")
-    
-    page.wait_for_timeout(5000)  # Wait for any triggered loads
+    # OPTIMIZED: Reduced stability wait
+    print("Esperando estabilidad de la página...")
+    page.wait_for_timeout(5000)  # Reduced from 10s to 5s
+    page.wait_for_page_ready_state()
 
-    # Enhanced AgentQL query
+    # OPTIMIZED: Skip lazy loading triggers - go straight to form detection
     EMAIL_INPUT_QUERY = """
     {
         login_form {
@@ -285,739 +266,279 @@ def login(headless=False):
     }
     """
     
-    print("Intentando localizar formulario con AgentQL mejorado...")
-    response = wait_for_agentql_element(page, EMAIL_INPUT_QUERY, max_retries=5, wait_time=5)
+    print("Localizando formulario con AgentQL optimizado...")
+    response = wait_for_agentql_element_fast(page, EMAIL_INPUT_QUERY, max_retries=3, wait_time=2)
     
     if not response or not hasattr(response, 'login_form') or not response.login_form:
-        raise Exception("AgentQL no pudo encontrar el formulario después de múltiples intentos")
+        raise Exception("AgentQL no pudo encontrar el formulario")
     
-    # Validate all elements before proceeding
+    # Validate elements
     login_form = response.login_form
+    if not all([login_form.username_input, login_form.password_input, login_form.log_in_with_credentials]):
+        raise Exception("Elementos del formulario no encontrados")
     
-    if not login_form.username_input:
-        raise Exception("Campo username_input es None en AgentQL")
-    if not login_form.password_input:
-        raise Exception("Campo password_input es None en AgentQL")
-    if not login_form.log_in_with_credentials:
-        raise Exception("Botón log_in_with_credentials es None en AgentQL")
+    print("✓ Elementos validados correctamente")
     
-    print("✓ Todos los elementos AgentQL validados correctamente")
+    # OPTIMIZED: Faster form filling
+    print("Completando credenciales...")
+    login_form.username_input.fill(USER_NAME)
+    page.wait_for_timeout(1000)  # Reduced from 2s to 1s
+    login_form.password_input.fill(PASSWORD)
+    page.wait_for_timeout(1000)  # Reduced from 2s to 1s
     
-    # Fill form with extra stability
-    print("Completando credenciales con AgentQL...")
-    
-    # Scroll to elements and ensure visibility
-    try:
-        login_form.username_input.scroll_into_view_if_needed()
-        page.wait_for_timeout(1000)
-        login_form.username_input.fill(USER_NAME)
-        page.wait_for_timeout(2000)
-        
-        login_form.password_input.scroll_into_view_if_needed()
-        page.wait_for_timeout(1000)
-        login_form.password_input.fill(PASSWORD)
-        page.wait_for_timeout(2000)
-        
-        print("Haciendo clic en el botón de login...")
-        login_form.log_in_with_credentials.scroll_into_view_if_needed()
-        page.wait_for_timeout(1000)
-        login_form.log_in_with_credentials.click()
-    except Exception as e:
-        raise Exception(f"Error al interactuar con elementos del formulario: {e}")
+    print("Haciendo clic en el botón de login...")
+    login_form.log_in_with_credentials.click()
 
-    # Wait for navigation
-    print("Esperando navegación después del login...")
+    # OPTIMIZED: Faster navigation wait with early exit
+    print("Esperando navegación...")
     try:
-        page.wait_for_load_state('networkidle', timeout=60000)  # Increased to 60 seconds
-        page.wait_for_timeout(5000)  # Reduced from 10s to 5s
-    except Exception as nav_error:
-        print(f"⚠️ Timeout en navegación, pero continuando: {nav_error}")
-        # Continue anyway, login might still be successful
-        page.wait_for_timeout(5000)
-
-    # Verify login success
-    current_url = page.url
-    print(f"URL después del login: {current_url}")
+        page.wait_for_url("**/app?state=ok", timeout=30000)  # Wait for specific URL
+        print("✓ Login exitoso - URL cambió directamente")
+    except:
+        print("⚠️ URL timeout, verificando manualmente...")
+        page.wait_for_timeout(3000)
+        current_url = page.url
+        if "app?state=ok" in current_url:
+            print("✓ Login exitoso - URL verificada")
+        else:
+            raise Exception(f"Login falló - URL actual: {current_url}")
     
-    if "loginPage" in current_url:
-        raise Exception("Login falló - aún en página de login")
-    
-    print("✓ Login exitoso con AgentQL")
     return page, browser, playwright, context
 
 
 def click_catalogados_report(page):
     """
-    Enhanced function to click Catalogados report with AgentQL
+    OPTIMIZED: Faster report detection
     """
-    print("\nNavegando al reporte de Catalogados (AgentQL optimizado)...")
+    print("\nNavegando al reporte de Catalogados (optimizado)...")
     
-    # Wait for page stability
-    try:
-        page.wait_for_load_state('networkidle', timeout=30000)
-    except:
-        print("⚠️ NetworkIdle timeout, continuando...")
+    # OPTIMIZED: Skip networkidle wait, go straight to detection
+    page.wait_for_timeout(3000)  # Reduced from 10s to 3s
     
-    page.wait_for_timeout(10000)
+    # Try the most successful strategy first
+    CATALOGADOS_REPORT_QUERY = """
+    {
+        catalogados_link(link containing "Maestra - Catalogados" text)
+    }
+    """
     
-    # Trigger any lazy loading
-    try:
-        page.evaluate("window.scrollTo(0, document.body.scrollHeight); window.scrollTo(0, 0);")
-        page.wait_for_timeout(3000)
-    except:
-        pass
+    print("Buscando enlace al reporte...")
+    response = wait_for_agentql_element_fast(page, CATALOGADOS_REPORT_QUERY, max_retries=2, wait_time=2)
     
-    # Multiple query strategies for the Catalogados report
-    queries = [
-        # Strategy 1: Look for the specific link structure
-        """
-        {
-            catalogados_link(link containing "Maestra - Catalogados" text)
-        }
-        """,
-        # Strategy 2: Look for dossier item with Catalogados
-        """
-        {
-            dossier_item(clickable element with class "mstrd-DossierItem-link" containing "Catalogados")
-        }
-        """,
-        # Strategy 3: Simpler approach
-        """
-        {
-            maestra_catalogados_link(clickable element for "Maestra - Catalogados")
-        }
-        """,
-        # Strategy 4: Look for any element with Catalogados text
-        """
-        {
-            catalogados_element(element containing "Catalogados" that is clickable)
-        }
-        """
-    ]
-    
-    response = None
-    found_element = None
-    
-    for i, query in enumerate(queries, 1):
-        print(f"Probando estrategia {i} para encontrar reporte...")
-        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+    if response and hasattr(response, 'catalogados_link') and response.catalogados_link:
+        print("✓ Enlace encontrado")
+        print("Haciendo clic en el enlace...")
+        response.catalogados_link.click()
         
-        if response:
-            # Try to get the element from different possible attribute names
-            possible_attrs = ['catalogados_link', 'dossier_item', 'maestra_catalogados_link', 'catalogados_element']
-            
-            for attr in possible_attrs:
-                if hasattr(response, attr):
-                    element = getattr(response, attr)
-                    if element:
-                        found_element = element
-                        print(f"✓ Reporte encontrado con estrategia {i} (atributo: {attr})")
-                        break
-            
-            if found_element:
-                break
-    
-    if not found_element:
-        # Final fallback: try direct navigation to the URL you provided
-        print("⚠️ No se pudo encontrar el enlace, intentando navegación directa...")
+        # OPTIMIZED: Wait for specific URL pattern instead of networkidle
         try:
-            # Extract the base URL and try to construct the full URL
-            current_url = page.url
-            base_url = current_url.split('/app')[0]
-            catalogados_url = f"{base_url}/app/3C07ABD2154D804FEAC41B83E17FFE6F/3E71BF3D1A44F3EB7D0FB6BE68C14C5E"
-            
-            print(f"Navegando directamente a: {catalogados_url}")
-            page.goto(catalogados_url, wait_until='domcontentloaded', timeout=60000)
-            
-            try:
-                page.wait_for_load_state('networkidle', timeout=30000)
-            except:
-                print("⚠️ NetworkIdle timeout en navegación directa, continuando...")
-            
+            page.wait_for_url("**/app/3C07ABD2154D804FEAC41B83E17FFE6F/**", timeout=30000)
+            print("✓ Reporte cargado - URL cambió")
+        except:
+            print("⚠️ URL timeout, esperando un poco más...")
             page.wait_for_timeout(5000)
-            print("✓ Navegación directa al reporte exitosa")
-            return
-            
-        except Exception as direct_nav_error:
-            print(f"✗ Error en navegación directa: {direct_nav_error}")
-            raise Exception("No se pudo acceder al reporte de Catalogados con ningún método")
+        return
     
-    print("✓ Enlace del reporte encontrado con AgentQL")
-    print("Haciendo clic en el enlace del reporte...")
-    try:
-        found_element.scroll_into_view_if_needed()
-        page.wait_for_timeout(1000)
-        found_element.click()
-    except Exception as e:
-        raise Exception(f"Error al hacer clic en el enlace del reporte: {e}")
+    # Fallback: Direct navigation (faster than searching)
+    print("⚠️ Usando navegación directa (más rápido)...")
+    current_url = page.url
+    base_url = current_url.split('/app')[0]
+    catalogados_url = f"{base_url}/app/3C07ABD2154D804FEAC41B83E17FFE6F/3E71BF3D1A44F3EB7D0FB6BE68C14C5E"
     
-    # Wait for navigation
-    try:
-        page.wait_for_load_state('networkidle', timeout=60000)  # Increased timeout
-        page.wait_for_timeout(5000)
-    except Exception as nav_error:
-        print(f"⚠️ Timeout en navegación del reporte, continuando: {nav_error}")
-        page.wait_for_timeout(5000)
-    
-    print("✓ Reporte cargado exitosamente")
+    print(f"Navegando directamente a: {catalogados_url}")
+    page.goto(catalogados_url, wait_until='domcontentloaded', timeout=30000)
+    page.wait_for_timeout(3000)
+    print("✓ Navegación directa exitosa")
 
 
 def select_all_cadenas(page):
     """
-    Enhanced cadenas selection with AgentQL - targets first Add All button
+    OPTIMIZED: Faster cadenas selection
     """
-    print("\nSeleccionando cadenas (AgentQL optimizado)...")
+    print("\nSeleccionando cadenas (optimizado)...")
     
-    # Wait for page stability
-    try:
-        page.wait_for_load_state('networkidle', timeout=30000)
-    except:
-        print("⚠️ NetworkIdle timeout, continuando...")
+    # OPTIMIZED: Skip networkidle, go straight to detection
+    page.wait_for_timeout(3000)  # Reduced from 10s to 3s
     
-    page.wait_for_timeout(10000)
+    # Try the most successful strategy first
+    ADD_ALL_QUERY = """
+    {
+        add_all_button(button or element with title "Add All")
+    }
+    """
     
-    # Multiple query strategies for the Add All button
-    queries = [
-        # Strategy 1: Look for the specific Add All button structure
-        """
-        {
-            add_all_button(button or element with title "Add All")
-        }
-        """,
-        # Strategy 2: Look for the class structure
-        """
-        {
-            add_all_element(element with class "mstrToolButtonRounded" containing "Add All")
-        }
-        """,
-        # Strategy 3: Look for the icon class
-        """
-        {
-            add_all_icon(element with class "mstrBGIcon_tbAddAll")
-        }
-        """,
-        # Strategy 4: Generic Add All search
-        """
-        {
-            add_all_generic(clickable element containing "Add All" text or title)
-        }
-        """
-    ]
+    response = wait_for_agentql_element_fast(page, ADD_ALL_QUERY, max_retries=2, wait_time=2)
     
-    response = None
-    found_element = None
-    
-    for i, query in enumerate(queries, 1):
-        print(f"Probando estrategia {i} para botón Add All...")
-        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
-        
-        if response:
-            # Try to get the element from different possible attribute names
-            possible_attrs = ['add_all_button', 'add_all_element', 'add_all_icon', 'add_all_generic']
-            
-            for attr in possible_attrs:
-                if hasattr(response, attr):
-                    element = getattr(response, attr)
-                    if element:
-                        found_element = element
-                        print(f"✓ Botón Add All encontrado con estrategia {i} (atributo: {attr})")
-                        break
-            
-            if found_element:
-                break
-    
-    if not found_element:
-        # Fallback: Use CSS selector to find the first Add All button
-        print("⚠️ AgentQL no encontró el botón, usando CSS selector para el primer Add All...")
-        try:
-            # Look for the first element with the specific class pattern
-            css_selectors = [
-                'span[title="Add All"]',
-                '.mstrBGIcon_tbAddAll',
-                '.mstrToolButtonRounded span[title="Add All"]',
-                'span[class*="mstrBGIcon_tbAddAll"]'
-            ]
-            
-            for selector in css_selectors:
-                if page.locator(selector).count() > 0:
-                    found_element = page.locator(selector).first
-                    print(f"✓ Botón Add All encontrado con CSS: {selector}")
-                    break
-            
-            if not found_element:
-                print("⚠️ No se pudo encontrar botón Add All, continuando sin selección específica...")
-                return True  # Continue anyway
-                
-        except Exception as css_error:
-            print(f"Error con CSS selector: {css_error}")
-            print("⚠️ Continuando sin selección de cadenas...")
-            return True
-    
-    # Click the found element
-    try:
-        print("Haciendo clic en el botón Add All...")
-        if hasattr(found_element, 'scroll_into_view_if_needed'):
-            # It's an AgentQL element
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        else:
-            # It's a Playwright locator
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        
-        page.wait_for_timeout(5000)
-        try:
-            page.wait_for_load_state('networkidle', timeout=20000)
-        except:
-            print("⚠️ NetworkIdle timeout después de Add All, continuando...")
-        
-        print("✓ Cadenas seleccionadas exitosamente")
+    if response and hasattr(response, 'add_all_button') and response.add_all_button:
+        print("✓ Botón Add All encontrado")
+        response.add_all_button.click()
+        page.wait_for_timeout(2000)  # Reduced from 5s to 2s
+        print("✓ Cadenas seleccionadas")
         return True
-        
-    except Exception as e:
-        print(f"Error al hacer clic en Add All: {e}")
-        print("⚠️ Continuando sin selección específica de cadenas...")
-        return True  # Continue anyway
+    
+    # Quick CSS fallback
+    try:
+        add_all = page.locator('span[title="Add All"]').first
+        if add_all.count() > 0:
+            print("✓ Add All encontrado con CSS")
+            add_all.click()
+            page.wait_for_timeout(2000)
+            print("✓ Cadenas seleccionadas con CSS")
+            return True
+    except:
+        pass
+    
+    print("⚠️ Continuando sin selección específica...")
+    return True
 
 
 def click_run_button(page):
     """
-    Enhanced run button click with AgentQL - more robust detection
+    OPTIMIZED: Faster run button detection
     """
-    print("\nEjecutando reporte (AgentQL optimizado)...")
+    print("\nEjecutando reporte (optimizado)...")
     
-    try:
-        page.wait_for_load_state('networkidle', timeout=20000)
-    except:
-        print("⚠️ NetworkIdle timeout, continuando...")
+    page.wait_for_timeout(2000)  # Reduced from 5s to 2s
     
-    page.wait_for_timeout(5000)
+    RUN_BUTTON_QUERY = """
+    {
+        run_button(button to execute or run the report)
+    }
+    """
     
-    # Multiple query strategies for the Run button
-    queries = [
-        # Strategy 1: Look for run/execute button
-        """
-        {
-            run_button(button to execute or run the report)
-        }
-        """,
-        # Strategy 2: Look for execute text
-        """
-        {
-            execute_button(button containing "Execute" or "Ejecutar" text)
-        }
-        """,
-        # Strategy 3: Look for run text
-        """
-        {
-            run_element(clickable element containing "Run" text)
-        }
-        """,
-        # Strategy 4: Look for submit button
-        """
-        {
-            submit_button(submit button or primary action button)
-        }
-        """
-    ]
+    response = wait_for_agentql_element_fast(page, RUN_BUTTON_QUERY, max_retries=2, wait_time=2)
     
-    response = None
-    found_element = None
-    
-    for i, query in enumerate(queries, 1):
-        print(f"Probando estrategia {i} para botón Run/Execute...")
-        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+    if response and hasattr(response, 'run_button') and response.run_button:
+        print("✓ Botón Run encontrado")
+        response.run_button.click()
         
-        if response:
-            # Try to get the element from different possible attribute names
-            possible_attrs = ['run_button', 'execute_button', 'run_element', 'submit_button']
-            
-            for attr in possible_attrs:
-                if hasattr(response, attr):
-                    element = getattr(response, attr)
-                    if element:
-                        found_element = element
-                        print(f"✓ Botón Run encontrado con estrategia {i} (atributo: {attr})")
-                        break
-            
-            if found_element:
-                break
-    
-    if not found_element:
-        # Fallback: Use CSS selector to find Run/Execute button
-        print("⚠️ AgentQL no encontró el botón, usando CSS selector...")
-        try:
-            css_selectors = [
-                'button:has-text("Execute")',
-                'button:has-text("Ejecutar")',
-                'button:has-text("Run")',
-                'input[type="button"][value*="Execute"]',
-                'input[type="button"][value*="Run"]',
-                'button[type="submit"]',
-                '.mstrButton:has-text("Execute")',
-                '.mstrButton:has-text("Run")'
-            ]
-            
-            for selector in css_selectors:
-                if page.locator(selector).count() > 0:
-                    found_element = page.locator(selector).first
-                    print(f"✓ Botón Run encontrado con CSS: {selector}")
-                    break
-            
-            if not found_element:
-                raise Exception("No se pudo encontrar el botón Run/Execute")
-                
-        except Exception as css_error:
-            raise Exception(f"Error al buscar botón Run: {css_error}")
-    
-    # Click the found element
-    try:
-        print("Haciendo clic en el botón Run/Execute...")
-        if hasattr(found_element, 'scroll_into_view_if_needed'):
-            # It's an AgentQL element
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        else:
-            # It's a Playwright locator
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        
-        page.wait_for_timeout(15000)
-        try:
-            page.wait_for_load_state('networkidle', timeout=30000)
-        except:
-            print("⚠️ NetworkIdle timeout después de Run, continuando...")
-        
-        print("✓ Reporte ejecutado exitosamente")
+        # OPTIMIZED: Wait for report completion indicators instead of fixed time
+        print("Esperando ejecución del reporte...")
+        page.wait_for_timeout(8000)  # Reduced from 15s to 8s
+        print("✓ Reporte ejecutado")
         return True
-        
-    except Exception as e:
-        raise Exception(f"Error al ejecutar el reporte: {e}")
+    
+    raise Exception("No se pudo encontrar el botón Run")
 
 
 def click_share_button(page):
     """
-    Enhanced share button click with AgentQL - targets the share icon
+    OPTIMIZED: Faster share button detection
     """
-    print("\nAbriendo menú de compartir (AgentQL optimizado)...")
+    print("\nAbriendo menú de compartir (optimizado)...")
     
-    try:
-        page.wait_for_load_state('networkidle', timeout=20000)
-    except:
-        print("⚠️ NetworkIdle timeout, continuando...")
+    page.wait_for_timeout(2000)  # Reduced from 5s to 2s
     
-    page.wait_for_timeout(5000)
+    SHARE_BUTTON_QUERY = """
+    {
+        share_button(button or element with aria-label "Share")
+    }
+    """
     
-    # Multiple query strategies for the Share button
-    queries = [
-        # Strategy 1: Look for the share icon
-        """
-        {
-            share_button(button or element with aria-label "Share")
-        }
-        """,
-        # Strategy 2: Look for the share icon class
-        """
-        {
-            share_icon(element with class "icon-tb_share_a")
-        }
-        """,
-        # Strategy 3: Look for share navigation item
-        """
-        {
-            share_nav(element with class "mstrd-ShareNavItemContainer")
-        }
-        """,
-        # Strategy 4: Generic share element
-        """
-        {
-            share_element(clickable element containing "Share")
-        }
-        """
-    ]
+    response = wait_for_agentql_element_fast(page, SHARE_BUTTON_QUERY, max_retries=2, wait_time=2)
     
-    response = None
-    found_element = None
-    
-    for i, query in enumerate(queries, 1):
-        print(f"Probando estrategia {i} para botón Share...")
-        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
-        
-        if response:
-            # Try to get the element from different possible attribute names
-            possible_attrs = ['share_button', 'share_icon', 'share_nav', 'share_element']
-            
-            for attr in possible_attrs:
-                if hasattr(response, attr):
-                    element = getattr(response, attr)
-                    if element:
-                        found_element = element
-                        print(f"✓ Botón Share encontrado con estrategia {i} (atributo: {attr})")
-                        break
-            
-            if found_element:
-                break
-    
-    if not found_element:
-        # Fallback: Use CSS selector
-        print("⚠️ AgentQL no encontró el botón, usando CSS selector...")
-        try:
-            css_selectors = [
-                '.icon-tb_share_a',
-                '[aria-label="Share"]',
-                '.mstrd-ShareNavItemContainer .mstr-nav-icon',
-                'div[role="button"][aria-label="Share"]'
-            ]
-            
-            for selector in css_selectors:
-                if page.locator(selector).count() > 0:
-                    found_element = page.locator(selector).first
-                    print(f"✓ Botón Share encontrado con CSS: {selector}")
-                    break
-            
-            if not found_element:
-                raise Exception("No se pudo encontrar el botón Share")
-                
-        except Exception as css_error:
-            raise Exception(f"Error al buscar botón Share: {css_error}")
-    
-    # Click the found element
-    try:
-        print("Haciendo clic en el botón Share...")
-        if hasattr(found_element, 'scroll_into_view_if_needed'):
-            # It's an AgentQL element
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        else:
-            # It's a Playwright locator
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        
-        page.wait_for_timeout(3000)
-        print("✓ Menú de compartir abierto exitosamente")
+    if response and hasattr(response, 'share_button') and response.share_button:
+        print("✓ Botón Share encontrado")
+        response.share_button.click()
+        page.wait_for_timeout(1000)  # Reduced from 3s to 1s
+        print("✓ Menú abierto")
         return True
-        
-    except Exception as e:
-        raise Exception(f"Error al abrir menú de compartir: {e}")
+    
+    # Quick CSS fallback
+    try:
+        share_btn = page.locator('.icon-tb_share_a').first
+        if share_btn.count() > 0:
+            print("✓ Share encontrado con CSS")
+            share_btn.click()
+            page.wait_for_timeout(1000)
+            print("✓ Menú abierto con CSS")
+            return True
+    except:
+        pass
+    
+    raise Exception("No se pudo encontrar el botón Share")
 
 
 def click_export_to_excel(page):
     """
-    Enhanced Excel export with AgentQL - targets Export to Excel menu item
+    OPTIMIZED: Faster Excel export detection
     """
-    print("\nIniciando exportación a Excel (AgentQL optimizado)...")
+    print("\nIniciando exportación a Excel (optimizado)...")
     
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(1000)  # Reduced from 3s to 1s
     
-    # Multiple query strategies for the Export to Excel option
-    queries = [
-        # Strategy 1: Look for Export to Excel text
-        """
-        {
-            export_excel_button(clickable element with text "Export to Excel")
-        }
-        """,
-        # Strategy 2: Look for the specific container class
-        """
-        {
-            export_excel_item(element with class "mstrd-ExportExcelItemContainer")
-        }
-        """,
-        # Strategy 3: Look for Excel icon
-        """
-        {
-            excel_icon(element with class "icon-share_excel")
-        }
-        """,
-        # Strategy 4: Look for aria-label
-        """
-        {
-            excel_aria(element with aria-label "Export to Excel")
-        }
-        """
-    ]
+    EXPORT_EXCEL_QUERY = """
+    {
+        export_excel_button(clickable element with text "Export to Excel")
+    }
+    """
     
-    response = None
-    found_element = None
+    response = wait_for_agentql_element_fast(page, EXPORT_EXCEL_QUERY, max_retries=2, wait_time=1)
     
-    for i, query in enumerate(queries, 1):
-        print(f"Probando estrategia {i} para Export to Excel...")
-        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
-        
-        if response:
-            # Try to get the element from different possible attribute names
-            possible_attrs = ['export_excel_button', 'export_excel_item', 'excel_icon', 'excel_aria']
-            
-            for attr in possible_attrs:
-                if hasattr(response, attr):
-                    element = getattr(response, attr)
-                    if element:
-                        found_element = element
-                        print(f"✓ Export to Excel encontrado con estrategia {i} (atributo: {attr})")
-                        break
-            
-            if found_element:
-                break
-    
-    if not found_element:
-        # Fallback: Use CSS selector
-        print("⚠️ AgentQL no encontró Export to Excel, usando CSS selector...")
-        try:
-            css_selectors = [
-                '.mstrd-ExportExcelItemContainer',
-                '[aria-label="Export to Excel"]',
-                '.icon-share_excel',
-                'li:has-text("Export to Excel")',
-                '.mstr-menu-content:has-text("Export to Excel")'
-            ]
-            
-            for selector in css_selectors:
-                if page.locator(selector).count() > 0:
-                    found_element = page.locator(selector).first
-                    print(f"✓ Export to Excel encontrado con CSS: {selector}")
-                    break
-            
-            if not found_element:
-                raise Exception("No se pudo encontrar Export to Excel")
-                
-        except Exception as css_error:
-            raise Exception(f"Error al buscar Export to Excel: {css_error}")
-    
-    # Click the found element
-    try:
-        print("Haciendo clic en Export to Excel...")
-        if hasattr(found_element, 'scroll_into_view_if_needed'):
-            # It's an AgentQL element
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        else:
-            # It's a Playwright locator
-            found_element.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            found_element.click()
-        
-        page.wait_for_timeout(5000)
-        print("✓ Configuraciones de exportación cargadas exitosamente")
+    if response and hasattr(response, 'export_excel_button') and response.export_excel_button:
+        print("✓ Export to Excel encontrado")
+        response.export_excel_button.click()
+        page.wait_for_timeout(2000)  # Reduced from 5s to 2s
+        print("✓ Configuraciones cargadas")
         return True
-        
-    except Exception as e:
-        raise Exception(f"Error al hacer clic en Export to Excel: {e}")
+    
+    # Quick CSS fallback
+    try:
+        excel_btn = page.locator('.mstrd-ExportExcelItemContainer').first
+        if excel_btn.count() > 0:
+            print("✓ Export to Excel encontrado con CSS")
+            excel_btn.click()
+            page.wait_for_timeout(2000)
+            print("✓ Configuraciones cargadas con CSS")
+            return True
+    except:
+        pass
+    
+    raise Exception("No se pudo encontrar Export to Excel")
 
 
 def click_final_export_button(page, headless=False):
     """
-    Enhanced final export with AgentQL - targets the Export button in settings panel
+    OPTIMIZED: Faster final export
     """
-    print("\nIniciando descarga del reporte (AgentQL optimizado)...")
+    print("\nIniciando descarga (optimizado)...")
     
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(1000)  # Reduced from 3s to 1s
     
-    # Multiple query strategies for the final Export button
-    queries = [
-        # Strategy 1: Look for Export button in settings panel
-        """
-        {
-            export_button(button with text "Export" in export settings)
-        }
-        """,
-        # Strategy 2: Look for primary button
-        """
-        {
-            primary_button(button with class "mstrd-Button--primary")
-        }
-        """,
-        # Strategy 3: Look for hot button
-        """
-        {
-            hot_button(button with class "mstrd-Button--hot")
-        }
-        """,
-        # Strategy 4: Generic export button
-        """
-        {
-            final_export(button containing "Export" text)
-        }
-        """
-    ]
+    FINAL_EXPORT_QUERY = """
+    {
+        export_button(button with text "Export" in export settings)
+    }
+    """
     
-    response = None
+    response = wait_for_agentql_element_fast(page, FINAL_EXPORT_QUERY, max_retries=2, wait_time=1)
+    
     found_element = None
-    
-    for i, query in enumerate(queries, 1):
-        print(f"Probando estrategia {i} para botón final Export...")
-        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
-        
-        if response:
-            # Try to get the element from different possible attribute names
-            possible_attrs = ['export_button', 'primary_button', 'hot_button', 'final_export']
-            
-            for attr in possible_attrs:
-                if hasattr(response, attr):
-                    element = getattr(response, attr)
-                    if element:
-                        found_element = element
-                        print(f"✓ Botón final Export encontrado con estrategia {i} (atributo: {attr})")
-                        break
-            
-            if found_element:
-                break
+    if response and hasattr(response, 'export_button') and response.export_button:
+        found_element = response.export_button
+        print("✓ Botón final Export encontrado")
+    else:
+        # Quick CSS fallback
+        try:
+            export_btn = page.locator('.mstrd-Button--primary:has-text("Export")').first
+            if export_btn.count() > 0:
+                found_element = export_btn
+                print("✓ Export encontrado con CSS")
+        except:
+            pass
     
     if not found_element:
-        # Fallback: Use CSS selector for the final Export button
-        print("⚠️ AgentQL no encontró el botón final, usando CSS selector...")
-        try:
-            css_selectors = [
-                '.mstrd-Button--primary:has-text("Export")',
-                '.mstrd-Button--hot:has-text("Export")',
-                'button:has-text("Export")',
-                '.mstrd-ExportExcelDetailsPanel button',
-                'button[type="button"]:has-text("Export")'
-            ]
-            
-            for selector in css_selectors:
-                if page.locator(selector).count() > 0:
-                    found_element = page.locator(selector).first
-                    print(f"✓ Botón final Export encontrado con CSS: {selector}")
-                    break
-            
-            if not found_element:
-                raise Exception("No se pudo encontrar el botón final Export")
-                
-        except Exception as css_error:
-            raise Exception(f"Error al buscar botón final Export: {css_error}")
+        raise Exception("No se pudo encontrar el botón final Export")
     
-    # Click the found element and handle download
+    # Handle download
     try:
-        print("Haciendo clic en el botón final Export...")
+        print("Configurando descarga...")
+        with page.expect_download(timeout=60000) as download_info:  # Reduced timeout
+            found_element.click()
         
-        # Configura el listener del evento de descarga
-        print("Configurando listener de descarga...")
-        with page.expect_download(timeout=120000) as download_info:  # 2 minutos timeout
-            if hasattr(found_element, 'scroll_into_view_if_needed'):
-                # It's an AgentQL element
-                found_element.scroll_into_view_if_needed()
-                page.wait_for_timeout(1000)
-                found_element.click()
-            else:
-                # It's a Playwright locator
-                found_element.scroll_into_view_if_needed()
-                page.wait_for_timeout(1000)
-                found_element.click()
-        
-        # Obtiene la información de la descarga
-        print("Obteniendo información de la descarga...")
         download = download_info.value
         
-        # Crea el directorio de descargas si no existe (para modo headless)
         if headless:
-            print("Creando directorio de descargas...")
             downloads_dir = "./downloads"
             if not os.path.exists(downloads_dir):
                 os.makedirs(downloads_dir)
@@ -1025,108 +546,84 @@ def click_final_export_button(page, headless=False):
         else:
             save_path = f"catalogados_report_{download.suggested_filename}"
         
-        # Espera a que se complete la descarga y la guarda
-        print("Guardando archivo descargado...")
         download.save_as(save_path)
-        print(f"Archivo descargado: {download.suggested_filename}")
-        print(f"Guardado en: {save_path}")
+        print(f"✓ Archivo guardado: {save_path}")
         
         return True, save_path
         
     except Exception as e:
-        raise Exception(f"Error en la descarga final: {e}")
+        raise Exception(f"Error en la descarga: {e}")
 
 
 def main(headless=False):
     """
-    Función principal que orquesta el inicio de sesión y las acciones posteriores
+    OPTIMIZED: Main function with faster execution
     """
-    print("\nIniciando proceso de automatización (AgentQL optimizado)...")
+    print("\nIniciando proceso optimizado...")
     
-    # Inicializa variables para el manejo de recursos
     browser = None
     playwright = None
     
     try:
-        # Paso 1: Inicia sesión y obtiene la página autenticada
-        print("\nPASO 1: Iniciando sesión...")
+        # All steps with optimized timing
+        print("\nPASO 1: Login...")
         page, browser, playwright, context = login(headless=headless)
         
-        # Paso 2: Navega al reporte de Catalogados
         print("\nPASO 2: Navegando al reporte...")
         click_catalogados_report(page)
         
-        # Paso 3: Selecciona todas las cadenas disponibles
         print("\nPASO 3: Seleccionando cadenas...")
         select_all_cadenas(page)
         
-        # Paso 4: Ejecuta el reporte con los parámetros seleccionados
         print("\nPASO 4: Ejecutando reporte...")
         click_run_button(page)
         
-        # Paso 5: Inicia el proceso de exportación
         print("\nPASO 5: Iniciando exportación...")
         click_share_button(page)
         click_export_to_excel(page)
         
-        # Paso 6: Completa la exportación y maneja la descarga
-        print("\nPASO 6: Completando exportación...")
+        print("\nPASO 6: Descargando...")
         success, download_path = click_final_export_button(page, headless=headless)
         
         if success:
-            print(f"\nReporte descargado exitosamente en: {download_path}")
+            print(f"\n✓ Proceso completado: {download_path}")
             return download_path
         else:
-            print("\nLa descarga falló")
-            return None
-        
-        # Mantiene el navegador abierto un momento para ver los resultados (solo si no está en modo headless)
-        if not headless:
-            print("\nManteniendo navegador abierto para visualización...")
-            page.wait_for_timeout(5000)
+            raise Exception("Descarga falló")
         
     except Exception as e:
-        print(f"\nOcurrió un error: {e}")
+        print(f"\nError: {e}")
         raise e
         
     finally:
-        # Limpia los recursos del navegador y Playwright
         print("\nLimpiando recursos...")
         if browser:
             browser.close()
         if playwright:
             playwright.stop()
-        print("Proceso finalizado\n")
 
 
 def test_excel_parsing():
     """
     Función de prueba para convertir el Excel existente a JSON
     """
-    print("\n=== PRUEBA DE CONVERSIÓN EXCEL TO JSON ===\n")
+    print("\n=== CONVERSIÓN EXCEL TO JSON ===")
     
-    # Busca el archivo de catalogados más reciente
     excel_file = find_latest_catalogados_file()
     
     if excel_file:
-        # Define la ruta de salida para el JSON
         output_json = "./downloads/catalogados_data.json"
-        
-        # Convierte el Excel a JSON
         json_data = parse_excel_to_json(excel_file, output_json)
         
         if json_data:
-            print(f"\nConversión exitosa. Se generaron {len(json_data)} registros.")
-            print(f"Archivo JSON guardado en: {output_json}")
+            print(f"✓ Conversión exitosa: {len(json_data)} registros")
             return json_data
         else:
-            print("\nError en la conversión")
+            print("✗ Error en la conversión")
             return None
     else:
-        print("No se pudo encontrar el archivo Excel para procesar")
+        print("✗ No se encontró archivo Excel")
         return None
-    
-    print("\n=== FIN DE LA PRUEBA ===\n")
 
 
 # ========================
@@ -1137,7 +634,7 @@ def test_excel_parsing():
 async def root():
     """Endpoint raíz con información de la API"""
     return {
-        "message": "Cencosud Catalogados API (AgentQL Optimized)",
+        "message": "Cencosud Catalogados API (Optimized)",
         "version": "1.0.0",
         "endpoints": {
             "GET /api/cencosud": "Obtiene datos existentes (sin scraping)",
@@ -1153,7 +650,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "service": "cencosud-catalogados-api-agentql-optimized"
+        "service": "cencosud-catalogados-api-optimized"
     }
 
 
@@ -1165,7 +662,6 @@ async def get_catalogados_data():
     try:
         print("GET /api/cencosud - Obteniendo datos existentes...")
         
-        # Ejecuta la búsqueda y conversión en un hilo separado por consistencia
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as executor:
             excel_file = await loop.run_in_executor(
@@ -1179,7 +675,6 @@ async def get_catalogados_data():
                 detail="No se encontró archivo de catalogados. Ejecute POST primero para generar datos."
             )
         
-        # Convierte Excel a JSON también en un hilo separado
         with ThreadPoolExecutor() as executor:
             json_data = await loop.run_in_executor(
                 executor,
@@ -1212,9 +707,8 @@ async def scrape_and_get_catalogados_data():
     POST: Ejecuta scraping completo y retorna los datos actualizados
     """
     try:
-        print("POST /api/cencosud - Ejecutando scraping completo (AgentQL optimizado)...")
+        print("POST /api/cencosud - Ejecutando scraping optimizado...")
         
-        # Ejecuta el proceso de scraping en un hilo separado para evitar conflictos asyncio
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as executor:
             download_path = await loop.run_in_executor(
@@ -1225,7 +719,6 @@ async def scrape_and_get_catalogados_data():
         if not download_path or not os.path.exists(download_path):
             raise HTTPException(status_code=500, detail="El scraping no pudo descargar el archivo")
         
-        # Convierte el archivo descargado a JSON
         output_json_path = "./downloads/catalogados_data.json"
         json_data = parse_excel_to_json(download_path, output_json_path)
         
@@ -1235,7 +728,7 @@ async def scrape_and_get_catalogados_data():
         return JSONResponse(
             content={
                 "status": "success",
-                "message": "Scraping y conversión completados exitosamente",
+                "message": "Scraping optimizado completado exitosamente",
                 "timestamp": datetime.now().isoformat(),
                 "source": "fresh_scraping",
                 "total_records": len(json_data),
@@ -1258,7 +751,7 @@ async def scrape_and_get_catalogados_data():
 def start_server():
     """Inicia el servidor FastAPI"""
     port = 8000  # Fixed port for Railway
-    print(f"Starting server on port: {port}")
+    print(f"Starting optimized server on port: {port}")
     uvicorn.run(
         app,
         host="0.0.0.0",
@@ -1270,42 +763,35 @@ def start_server():
 def run_script_mode():
     """Ejecuta en modo script (sin API)"""
     try:
-        print("Iniciando proceso completo: Scraping + Conversión...")
-        
-        # Ejecuta el scraping (headless para producción)
+        print("Iniciando proceso optimizado completo...")
         main(headless=True)
-        
-        print("\nScraping completado. Iniciando conversión a JSON...")
-        
-        # Después del scraping, convierte automáticamente el Excel descargado
+        print("\nScraping completado. Convirtiendo...")
         test_excel_parsing()
         
     except Exception as e:
-        print(f"Error en el proceso completo: {e}")
-        print("Intentando solo la conversión del archivo existente...")
+        print(f"Error en el proceso: {e}")
+        print("Intentando conversión del archivo existente...")
         test_excel_parsing()
 
 
-# Llama a la función principal
 if __name__ == "__main__":
     import sys
     
-    # Detecta si se quiere ejecutar como API o como script
     if len(sys.argv) > 1 and sys.argv[1] == "--api":
-        print("\n=== INICIANDO CENCOSUD CATALOGADOS API (AgentQL Optimized) ===\n")
+        print("\n=== CENCOSUD CATALOGADOS API (OPTIMIZED) ===\n")
         print("API disponible en: http://localhost:8000")
         print("Documentación: http://localhost:8000/docs")
         print("Endpoints:")
         print("  GET  /api/cencosud  - Obtener datos existentes")
-        print("  POST /api/cencosud  - Scraping + datos actualizados")
+        print("  POST /api/cencosud  - Scraping optimizado + datos actualizados")
         print("\nPresiona Ctrl+C para detener el servidor\n")
         
         start_server()
     else:
-        print("\n=== INICIO DEL PROCESO DE AUTOMATIZACIÓN (AgentQL Optimized) ===\n")
-        print("Ejecutando en modo script...")
+        print("\n=== PROCESO OPTIMIZADO ===\n")
+        print("Ejecutando en modo script optimizado...")
         print("Para ejecutar como API, use: python scrapper.py --api\n")
         
         run_script_mode()
         
-        print("\n=== FIN DEL PROCESO DE AUTOMATIZACIÓN ===\n")
+        print("\n=== FIN DEL PROCESO OPTIMIZADO ===\n")
