@@ -5,3 +5,7 @@ builder = "nixpacks"
 startCommand = "python scrapper.py --api"
 healthcheckPath = "/health"
 restartPolicyType = "on_failure"
+
+[[services]]
+name = "web"
+port = 8080
