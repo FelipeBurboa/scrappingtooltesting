@@ -464,73 +464,237 @@ def click_catalogados_report(page):
 
 def select_all_cadenas(page):
     """
-    Enhanced cadenas selection with AgentQL
+    Enhanced cadenas selection with AgentQL - targets first Add All button
     """
     print("\nSeleccionando cadenas (AgentQL optimizado)...")
     
     # Wait for page stability
-    page.wait_for_load_state('networkidle', timeout=30000)
+    try:
+        page.wait_for_load_state('networkidle', timeout=30000)
+    except:
+        print("⚠️ NetworkIdle timeout, continuando...")
+    
     page.wait_for_timeout(10000)
     
-    CADENAS_QUERY = """
-    {
-        elementos_cadena[]
-        boton_add_all
-    }
-    """
+    # Multiple query strategies for the Add All button
+    queries = [
+        # Strategy 1: Look for the specific Add All button structure
+        """
+        {
+            add_all_button(button or element with title "Add All")
+        }
+        """,
+        # Strategy 2: Look for the class structure
+        """
+        {
+            add_all_element(element with class "mstrToolButtonRounded" containing "Add All")
+        }
+        """,
+        # Strategy 3: Look for the icon class
+        """
+        {
+            add_all_icon(element with class "mstrBGIcon_tbAddAll")
+        }
+        """,
+        # Strategy 4: Generic Add All search
+        """
+        {
+            add_all_generic(clickable element containing "Add All" text or title)
+        }
+        """
+    ]
     
-    response = wait_for_agentql_element(page, CADENAS_QUERY, max_retries=3, wait_time=5)
+    response = None
+    found_element = None
     
-    if response and hasattr(response, 'boton_add_all') and response.boton_add_all:
-        print("✓ Botón Agregar Todo encontrado con AgentQL")
-        try:
-            response.boton_add_all.scroll_into_view_if_needed()
-            page.wait_for_timeout(1000)
-            response.boton_add_all.click()
+    for i, query in enumerate(queries, 1):
+        print(f"Probando estrategia {i} para botón Add All...")
+        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+        
+        if response:
+            # Try to get the element from different possible attribute names
+            possible_attrs = ['add_all_button', 'add_all_element', 'add_all_icon', 'add_all_generic']
             
-            page.wait_for_timeout(5000)
-            page.wait_for_load_state('networkidle', timeout=30000)
-            print("✓ Cadenas seleccionadas exitosamente")
+            for attr in possible_attrs:
+                if hasattr(response, attr):
+                    element = getattr(response, attr)
+                    if element:
+                        found_element = element
+                        print(f"✓ Botón Add All encontrado con estrategia {i} (atributo: {attr})")
+                        break
+            
+            if found_element:
+                break
+    
+    if not found_element:
+        # Fallback: Use CSS selector to find the first Add All button
+        print("⚠️ AgentQL no encontró el botón, usando CSS selector para el primer Add All...")
+        try:
+            # Look for the first element with the specific class pattern
+            css_selectors = [
+                'span[title="Add All"]',
+                '.mstrBGIcon_tbAddAll',
+                '.mstrToolButtonRounded span[title="Add All"]',
+                'span[class*="mstrBGIcon_tbAddAll"]'
+            ]
+            
+            for selector in css_selectors:
+                if page.locator(selector).count() > 0:
+                    found_element = page.locator(selector).first
+                    print(f"✓ Botón Add All encontrado con CSS: {selector}")
+                    break
+            
+            if not found_element:
+                print("⚠️ No se pudo encontrar botón Add All, continuando sin selección específica...")
+                return True  # Continue anyway
+                
+        except Exception as css_error:
+            print(f"Error con CSS selector: {css_error}")
+            print("⚠️ Continuando sin selección de cadenas...")
             return True
-        except Exception as e:
-            print(f"Error al seleccionar cadenas: {e}")
-            print("⚠️ Continuando sin selección específica de cadenas...")
-            return True
-    else:
-        print("⚠️ No se pudo encontrar botón Agregar Todo, continuando...")
+    
+    # Click the found element
+    try:
+        print("Haciendo clic en el botón Add All...")
+        if hasattr(found_element, 'scroll_into_view_if_needed'):
+            # It's an AgentQL element
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
+        else:
+            # It's a Playwright locator
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
+        
+        page.wait_for_timeout(5000)
+        try:
+            page.wait_for_load_state('networkidle', timeout=20000)
+        except:
+            print("⚠️ NetworkIdle timeout después de Add All, continuando...")
+        
+        print("✓ Cadenas seleccionadas exitosamente")
+        return True
+        
+    except Exception as e:
+        print(f"Error al hacer clic en Add All: {e}")
+        print("⚠️ Continuando sin selección específica de cadenas...")
         return True  # Continue anyway
 
 
 def click_run_button(page):
     """
-    Enhanced run button click with AgentQL
+    Enhanced run button click with AgentQL - more robust detection
     """
     print("\nEjecutando reporte (AgentQL optimizado)...")
     
-    page.wait_for_load_state('networkidle', timeout=30000)
+    try:
+        page.wait_for_load_state('networkidle', timeout=20000)
+    except:
+        print("⚠️ NetworkIdle timeout, continuando...")
+    
     page.wait_for_timeout(5000)
     
-    RUN_BUTTON_QUERY = """
-    {
-        run_button
-    }
-    """
+    # Multiple query strategies for the Run button
+    queries = [
+        # Strategy 1: Look for run/execute button
+        """
+        {
+            run_button(button to execute or run the report)
+        }
+        """,
+        # Strategy 2: Look for execute text
+        """
+        {
+            execute_button(button containing "Execute" or "Ejecutar" text)
+        }
+        """,
+        # Strategy 3: Look for run text
+        """
+        {
+            run_element(clickable element containing "Run" text)
+        }
+        """,
+        # Strategy 4: Look for submit button
+        """
+        {
+            submit_button(submit button or primary action button)
+        }
+        """
+    ]
     
-    response = wait_for_agentql_element(page, RUN_BUTTON_QUERY, max_retries=3, wait_time=5)
+    response = None
+    found_element = None
     
-    if not response or not hasattr(response, 'run_button') or not response.run_button:
-        raise Exception("AgentQL no pudo encontrar el botón Ejecutar")
+    for i, query in enumerate(queries, 1):
+        print(f"Probando estrategia {i} para botón Run/Execute...")
+        response = wait_for_agentql_element(page, query, max_retries=2, wait_time=3)
+        
+        if response:
+            # Try to get the element from different possible attribute names
+            possible_attrs = ['run_button', 'execute_button', 'run_element', 'submit_button']
+            
+            for attr in possible_attrs:
+                if hasattr(response, attr):
+                    element = getattr(response, attr)
+                    if element:
+                        found_element = element
+                        print(f"✓ Botón Run encontrado con estrategia {i} (atributo: {attr})")
+                        break
+            
+            if found_element:
+                break
     
-    print("✓ Botón Ejecutar encontrado con AgentQL")
+    if not found_element:
+        # Fallback: Use CSS selector to find Run/Execute button
+        print("⚠️ AgentQL no encontró el botón, usando CSS selector...")
+        try:
+            css_selectors = [
+                'button:has-text("Execute")',
+                'button:has-text("Ejecutar")',
+                'button:has-text("Run")',
+                'input[type="button"][value*="Execute"]',
+                'input[type="button"][value*="Run"]',
+                'button[type="submit"]',
+                '.mstrButton:has-text("Execute")',
+                '.mstrButton:has-text("Run")'
+            ]
+            
+            for selector in css_selectors:
+                if page.locator(selector).count() > 0:
+                    found_element = page.locator(selector).first
+                    print(f"✓ Botón Run encontrado con CSS: {selector}")
+                    break
+            
+            if not found_element:
+                raise Exception("No se pudo encontrar el botón Run/Execute")
+                
+        except Exception as css_error:
+            raise Exception(f"Error al buscar botón Run: {css_error}")
+    
+    # Click the found element
     try:
-        response.run_button.scroll_into_view_if_needed()
-        page.wait_for_timeout(1000)
-        response.run_button.click()
+        print("Haciendo clic en el botón Run/Execute...")
+        if hasattr(found_element, 'scroll_into_view_if_needed'):
+            # It's an AgentQL element
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
+        else:
+            # It's a Playwright locator
+            found_element.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            found_element.click()
         
         page.wait_for_timeout(15000)
-        page.wait_for_load_state('networkidle', timeout=30000)
+        try:
+            page.wait_for_load_state('networkidle', timeout=30000)
+        except:
+            print("⚠️ NetworkIdle timeout después de Run, continuando...")
+        
         print("✓ Reporte ejecutado exitosamente")
         return True
+        
     except Exception as e:
         raise Exception(f"Error al ejecutar el reporte: {e}")
 
