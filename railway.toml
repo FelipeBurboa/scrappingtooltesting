@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python scrapper.py --api"
+healthcheckPath = "/health"
+restartPolicyType = "on_failure"
