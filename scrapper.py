@@ -4,6 +4,7 @@ import pandas as pd
 import agentql
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
+import time
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException
@@ -150,96 +151,247 @@ def find_latest_catalogados_file():
     return latest_file
 
 
+def wait_for_agentql_element(page, query, max_retries=5, wait_time=3):
+    """
+    Enhanced waiting function specifically for AgentQL in containers
+    """
+    for attempt in range(max_retries):
+        print(f"AgentQL attempt {attempt + 1}/{max_retries}...")
+        
+        try:
+            # Extra wait for DOM to stabilize
+            page.wait_for_timeout(wait_time * 1000)
+            page.wait_for_page_ready_state()
+            
+            # Wait for network to be idle
+            page.wait_for_load_state('networkidle', timeout=30000)
+            
+            # Query with AgentQL
+            response = page.query_elements(query)
+            
+            if response:
+                print(f"✓ AgentQL found structure on attempt {attempt + 1}")
+                return response
+            else:
+                print(f"✗ AgentQL returned None on attempt {attempt + 1}")
+                
+        except Exception as e:
+            print(f"✗ AgentQL error on attempt {attempt + 1}: {e}")
+        
+        if attempt < max_retries - 1:
+            print(f"Waiting {wait_time}s before retry...")
+            time.sleep(wait_time)
+            # Try to trigger a re-render
+            try:
+                page.evaluate("window.dispatchEvent(new Event('resize'))")
+            except:
+                pass
+    
+    return None
+
+
+def enhanced_browser_setup(headless=False):
+    """
+    Enhanced browser setup specifically for AgentQL in containers
+    """
+    playwright = sync_playwright().start()
+    
+    browser = playwright.chromium.launch(
+        headless=headless,
+        args=[
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-gpu',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-blink-features=AutomationControlled',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--single-process'
+        ]
+    )
+    
+    context = browser.new_context(
+        user_agent='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport={'width': 1920, 'height': 1080},  # Larger viewport
+        accept_downloads=True,
+        java_script_enabled=True,
+        # Ensure images load
+        has_touch=False,
+        is_mobile=False
+    )
+    
+    return playwright, browser, context
+
+
 def login(headless=False):
     """
-    Realiza el inicio de sesión en MicroStrategy Library y guarda el estado de autenticación
-    Retorna la página autenticada para interacciones posteriores
+    Enhanced login function with AgentQL container fixes
     """
-    print("\nIniciando proceso de login...")
+    print("\nIniciando proceso de login (optimizado para containers)...")
     
-    # URL inicial de la página de inicio de sesión
     INITIAL_URL = "https://datasharing.cencosud.com/MicroStrategyLibraryDS/auth/ui/loginPage"
     print(f"Navegando a: {INITIAL_URL}")
 
-    # Query para localizar los elementos del formulario de inicio de sesión
+    # Enhanced browser setup
+    print("Configurando navegador optimizado para AgentQL...")
+    playwright, browser, context = enhanced_browser_setup(headless)
+    page = agentql.wrap(context.new_page())
+
+    # Navigate with extra stability
+    print("Navegando a la página de login...")
+    page.goto(INITIAL_URL, wait_until='domcontentloaded', timeout=60000)
+    
+    # Multiple stability checks
+    print("Esperando estabilidad completa de la página...")
+    page.wait_for_load_state('networkidle', timeout=30000)
+    page.wait_for_timeout(10000)  # Extra wait
+    
+    # Trigger any lazy loading
+    print("Activando carga de contenido...")
+    try:
+        page.evaluate("""
+            // Scroll to trigger any lazy loading
+            window.scrollTo(0, document.body.scrollHeight);
+            window.scrollTo(0, 0);
+            
+            // Trigger resize to ensure proper rendering
+            window.dispatchEvent(new Event('resize'));
+            
+            // Force reflow
+            document.body.offsetHeight;
+        """)
+    except Exception as e:
+        print(f"Error en JavaScript: {e}")
+    
+    page.wait_for_timeout(5000)  # Wait for any triggered loads
+
+    # Enhanced AgentQL query
     EMAIL_INPUT_QUERY = """
     {
-        login_form{
-        username_input
-        password_input
-        log_in_with_credentials
+        login_form {
+            username_input
+            password_input
+            log_in_with_credentials
         }
     }
     """
-
-    # Inicializa Playwright y configura el navegador
-    print("Inicializando Playwright...")
-    playwright = sync_playwright().start()
-    print("Iniciando navegador...")
-    browser = playwright.chromium.launch(headless=headless)
-    print("Configurando contexto del navegador...")
-    context = browser.new_context(accept_downloads=True)
-    print("Creando nueva página...")
-    page = agentql.wrap(context.new_page())
-
-    # Navega a la página de inicio de sesión
-    print("Navegando a la página de login...")
-    page.goto(INITIAL_URL)
-
-    # Localiza y completa el formulario de inicio de sesión
-    print("Localizando formulario de login...")
-    response = page.query_elements(EMAIL_INPUT_QUERY)
-    print("Completando credenciales...")
-    response.login_form.username_input.fill(USER_NAME)
-    page.wait_for_timeout(1000)  # Espera para asegurar que el campo de usuario se complete
-    response.login_form.password_input.fill(PASSWORD)
-    page.wait_for_timeout(1000)  # Espera para asegurar que el campo de contraseña se complete
-    print("Haciendo clic en el botón de login...")
-    response.login_form.log_in_with_credentials.click()
-
-    # Espera a que la página termine de cargar después del inicio de sesión
-    print("Esperando a que la página cargue...")
-    page.wait_for_page_ready_state()
-
-    # Espera adicional para asegurar que la sesión esté completamente establecida
-    print("Esperando a que la sesión se establezca completamente...")
-    page.wait_for_timeout(5000)
     
-    print("Login completado exitosamente\n")
+    print("Intentando localizar formulario con AgentQL mejorado...")
+    response = wait_for_agentql_element(page, EMAIL_INPUT_QUERY, max_retries=5, wait_time=5)
+    
+    if not response or not hasattr(response, 'login_form') or not response.login_form:
+        raise Exception("AgentQL no pudo encontrar el formulario después de múltiples intentos")
+    
+    # Validate all elements before proceeding
+    login_form = response.login_form
+    
+    if not login_form.username_input:
+        raise Exception("Campo username_input es None en AgentQL")
+    if not login_form.password_input:
+        raise Exception("Campo password_input es None en AgentQL")
+    if not login_form.log_in_with_credentials:
+        raise Exception("Botón log_in_with_credentials es None en AgentQL")
+    
+    print("✓ Todos los elementos AgentQL validados correctamente")
+    
+    # Fill form with extra stability
+    print("Completando credenciales con AgentQL...")
+    
+    # Scroll to elements and ensure visibility
+    try:
+        login_form.username_input.scroll_into_view_if_needed()
+        page.wait_for_timeout(1000)
+        login_form.username_input.fill(USER_NAME)
+        page.wait_for_timeout(2000)
+        
+        login_form.password_input.scroll_into_view_if_needed()
+        page.wait_for_timeout(1000)
+        login_form.password_input.fill(PASSWORD)
+        page.wait_for_timeout(2000)
+        
+        print("Haciendo clic en el botón de login...")
+        login_form.log_in_with_credentials.scroll_into_view_if_needed()
+        page.wait_for_timeout(1000)
+        login_form.log_in_with_credentials.click()
+    except Exception as e:
+        raise Exception(f"Error al interactuar con elementos del formulario: {e}")
+
+    # Wait for navigation
+    print("Esperando navegación después del login...")
+    page.wait_for_load_state('networkidle', timeout=30000)
+    page.wait_for_timeout(10000)
+
+    # Verify login success
+    current_url = page.url
+    print(f"URL después del login: {current_url}")
+    
+    if "loginPage" in current_url:
+        raise Exception("Login falló - aún en página de login")
+    
+    print("✓ Login exitoso con AgentQL")
     return page, browser, playwright, context
 
 
 def click_catalogados_report(page):
     """
-    Hace clic en el reporte Maestra - Catalogados
+    Enhanced function to click Catalogados report with AgentQL
     """
-    print("\nNavegando al reporte de Catalogados...")
+    print("\nNavegando al reporte de Catalogados (AgentQL optimizado)...")
     
-    # Query para localizar el enlace al reporte de Catalogados
+    # Wait for page stability
+    page.wait_for_load_state('networkidle', timeout=30000)
+    page.wait_for_timeout(10000)
+    
+    # Trigger any lazy loading
+    try:
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight); window.scrollTo(0, 0);")
+        page.wait_for_timeout(3000)
+    except:
+        pass
+    
     CATALOGADOS_REPORT_QUERY = """
     {
         maestra_catalogados_link(clickable link for "Maestra - Catalogados" report)
     }
     """
     
-    # Localiza y hace clic en el enlace del reporte
-    print("Buscando enlace al reporte...")
-    response = page.query_elements(CATALOGADOS_REPORT_QUERY)
+    print("Buscando enlace al reporte con AgentQL...")
+    response = wait_for_agentql_element(page, CATALOGADOS_REPORT_QUERY, max_retries=3, wait_time=5)
+    
+    if not response or not hasattr(response, 'maestra_catalogados_link') or not response.maestra_catalogados_link:
+        raise Exception("AgentQL no pudo encontrar el enlace del reporte")
+    
+    print("✓ Enlace del reporte encontrado con AgentQL")
     print("Haciendo clic en el enlace del reporte...")
-    response.maestra_catalogados_link.click()
-    # Espera a que la página del reporte termine de cargar
-    print("Esperando a que el reporte cargue...")
-    page.wait_for_page_ready_state()
-    print("Reporte cargado exitosamente\n")
+    try:
+        response.maestra_catalogados_link.scroll_into_view_if_needed()
+        page.wait_for_timeout(1000)
+        response.maestra_catalogados_link.click()
+    except Exception as e:
+        raise Exception(f"Error al hacer clic en el enlace del reporte: {e}")
+    
+    # Wait for navigation
+    page.wait_for_load_state('networkidle', timeout=30000)
+    page.wait_for_timeout(10000)
+    
+    print("✓ Reporte cargado exitosamente")
 
 
 def select_all_cadenas(page):
     """
-    Hace clic en el botón Agregar Todo para seleccionar todas las cadenas (JUMBO, SANTA ISABEL, SPID)
+    Enhanced cadenas selection with AgentQL
     """
-    print("\nSeleccionando cadenas...")
+    print("\nSeleccionando cadenas (AgentQL optimizado)...")
     
-    # Query para localizar los elementos de cadena y el botón de agregar todo
+    # Wait for page stability
+    page.wait_for_load_state('networkidle', timeout=30000)
+    page.wait_for_timeout(10000)
+    
     CADENAS_QUERY = """
     {
         elementos_cadena[]
@@ -247,134 +399,154 @@ def select_all_cadenas(page):
     }
     """
     
-    # Localiza los elementos de la interfaz
-    print("Buscando elementos de cadena...")
-    response = page.query_elements(CADENAS_QUERY)
+    response = wait_for_agentql_element(page, CADENAS_QUERY, max_retries=3, wait_time=5)
     
     if response and hasattr(response, 'boton_add_all') and response.boton_add_all:
-        print("Haciendo clic en el botón Agregar Todo...")
-        response.boton_add_all.click()
-        print("Esperando a que se procese la selección...")
-        page.wait_for_timeout(2000)  # Espera para que se procese la selección
-        page.wait_for_page_ready_state()
-        print("Cadenas seleccionadas exitosamente\n")
-        return True
+        print("✓ Botón Agregar Todo encontrado con AgentQL")
+        try:
+            response.boton_add_all.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
+            response.boton_add_all.click()
+            
+            page.wait_for_timeout(5000)
+            page.wait_for_load_state('networkidle', timeout=30000)
+            print("✓ Cadenas seleccionadas exitosamente")
+            return True
+        except Exception as e:
+            print(f"Error al seleccionar cadenas: {e}")
+            print("⚠️ Continuando sin selección específica de cadenas...")
+            return True
     else:
-        print("No se pudo encontrar el botón Agregar Todo\n")
-        return False
+        print("⚠️ No se pudo encontrar botón Agregar Todo, continuando...")
+        return True  # Continue anyway
 
 
 def click_run_button(page):
     """
-    Hace clic en el botón Ejecutar para procesar el reporte con los parámetros seleccionados
+    Enhanced run button click with AgentQL
     """
-    print("\nIniciando ejecución del reporte...")
+    print("\nEjecutando reporte (AgentQL optimizado)...")
     
-    # Query para localizar el botón de ejecutar
+    page.wait_for_load_state('networkidle', timeout=30000)
+    page.wait_for_timeout(5000)
+    
     RUN_BUTTON_QUERY = """
     {
         run_button
     }
     """
     
-    # Localiza y hace clic en el botón de ejecutar
-    print("Buscando botón de ejecutar...")
-    response = page.query_elements(RUN_BUTTON_QUERY)
+    response = wait_for_agentql_element(page, RUN_BUTTON_QUERY, max_retries=3, wait_time=5)
     
-    if response and hasattr(response, 'run_button') and response.run_button:
-        print("Haciendo clic en el botón Ejecutar...")
+    if not response or not hasattr(response, 'run_button') or not response.run_button:
+        raise Exception("AgentQL no pudo encontrar el botón Ejecutar")
+    
+    print("✓ Botón Ejecutar encontrado con AgentQL")
+    try:
+        response.run_button.scroll_into_view_if_needed()
+        page.wait_for_timeout(1000)
         response.run_button.click()
-        print("Esperando a que el reporte comience a procesarse...")
-        page.wait_for_timeout(3000)  # Espera para que el reporte comience a procesarse
-        page.wait_for_page_ready_state()
-        print("Reporte iniciado exitosamente\n")
+        
+        page.wait_for_timeout(15000)
+        page.wait_for_load_state('networkidle', timeout=30000)
+        print("✓ Reporte ejecutado exitosamente")
         return True
-    else:
-        print("No se pudo encontrar el botón Ejecutar\n")
-        return False
+    except Exception as e:
+        raise Exception(f"Error al ejecutar el reporte: {e}")
 
 
 def click_share_button(page):
     """
-    Hace clic en el botón Compartir para abrir el menú de compartir
+    Enhanced share button click with AgentQL
     """
-    print("\nAbriendo menú de compartir...")
+    print("\nAbriendo menú de compartir (AgentQL optimizado)...")
     
-    # Query para localizar el botón de compartir
+    page.wait_for_load_state('networkidle', timeout=30000)
+    page.wait_for_timeout(5000)
+    
     SHARE_BUTTON_QUERY = """
     {
         share_button
     }
     """
     
-    # Localiza y hace clic en el botón de compartir
-    print("Buscando botón de compartir...")
-    response = page.query_elements(SHARE_BUTTON_QUERY)
+    response = wait_for_agentql_element(page, SHARE_BUTTON_QUERY, max_retries=3, wait_time=5)
     
-    if response and hasattr(response, 'share_button') and response.share_button:
-        print("Haciendo clic en el botón Compartir...")
+    if not response or not hasattr(response, 'share_button') or not response.share_button:
+        raise Exception("AgentQL no pudo encontrar el botón Compartir")
+    
+    print("✓ Botón Compartir encontrado con AgentQL")
+    try:
+        response.share_button.scroll_into_view_if_needed()
+        page.wait_for_timeout(1000)
         response.share_button.click()
-        print("Esperando a que se abra el menú de compartir...")
-        page.wait_for_timeout(2000)  # Espera para que se abra el menú de compartir
-        print("Menú de compartir abierto exitosamente\n")
+        
+        page.wait_for_timeout(3000)
+        print("✓ Menú de compartir abierto exitosamente")
         return True
-    else:
-        print("No se pudo encontrar el botón Compartir\n")
-        return False
+    except Exception as e:
+        raise Exception(f"Error al abrir menú de compartir: {e}")
 
 
 def click_export_to_excel(page):
     """
-    Hace clic en el botón Exportar a Excel desde el menú de compartir
+    Enhanced Excel export with AgentQL
     """
-    print("\nIniciando exportación a Excel...")
+    print("\nIniciando exportación a Excel (AgentQL optimizado)...")
     
-    # Query para localizar el botón de exportar a Excel
+    page.wait_for_timeout(3000)
+    
     EXPORT_EXCEL_QUERY = """
     {
         export_to_excel_button
     }
     """
     
-    # Localiza y hace clic en el botón de exportar a Excel
-    print("Buscando botón de exportar a Excel...")
-    response = page.query_elements(EXPORT_EXCEL_QUERY)
+    response = wait_for_agentql_element(page, EXPORT_EXCEL_QUERY, max_retries=3, wait_time=5)
     
-    if response and hasattr(response, 'export_to_excel_button') and response.export_to_excel_button:
-        print("Haciendo clic en el botón Exportar a Excel...")
+    if not response or not hasattr(response, 'export_to_excel_button') or not response.export_to_excel_button:
+        raise Exception("AgentQL no pudo encontrar el botón Exportar a Excel")
+    
+    print("✓ Botón Exportar a Excel encontrado con AgentQL")
+    try:
+        response.export_to_excel_button.scroll_into_view_if_needed()
+        page.wait_for_timeout(1000)
         response.export_to_excel_button.click()
-        print("Esperando a que se carguen las configuraciones de exportación...")
-        page.wait_for_timeout(2000)  # Espera para que se carguen las configuraciones de exportación
-        print("Configuraciones de exportación cargadas exitosamente\n")
+        
+        page.wait_for_timeout(5000)
+        print("✓ Configuraciones de exportación cargadas exitosamente")
         return True
-    else:
-        print("No se pudo encontrar el botón Exportar a Excel\n")
-        return False
+    except Exception as e:
+        raise Exception(f"Error al exportar a Excel: {e}")
 
 
 def click_final_export_button(page, headless=False):
     """
-    Hace clic en el botón final de Exportar en la Configuración de Exportación para iniciar la descarga
+    Enhanced final export with AgentQL
     """
-    print("\nIniciando descarga del reporte...")
+    print("\nIniciando descarga del reporte (AgentQL optimizado)...")
     
-    # Query para localizar el botón final de exportar
+    page.wait_for_timeout(3000)
+    
     FINAL_EXPORT_QUERY = """
     {
         export_button(This button only has Export as a text, and is inside the Export Settings)
     }
     """
     
-    # Localiza el botón final de exportar
-    print("Buscando botón final de exportar...")
-    response = page.query_elements(FINAL_EXPORT_QUERY)
+    response = wait_for_agentql_element(page, FINAL_EXPORT_QUERY, max_retries=3, wait_time=5)
     
-    if response and hasattr(response, 'export_button') and response.export_button:
-        print("Haciendo clic en el botón final de Exportar...")
-        
+    if not response or not hasattr(response, 'export_button') or not response.export_button:
+        raise Exception("AgentQL no pudo encontrar el botón final de Exportar")
+    
+    print("✓ Botón final de Exportar encontrado con AgentQL")
+    
+    try:
         # Configura el listener del evento de descarga
         print("Configurando listener de descarga...")
-        with page.expect_download() as download_info:
+        with page.expect_download(timeout=120000) as download_info:  # 2 minutos timeout
+            response.export_button.scroll_into_view_if_needed()
+            page.wait_for_timeout(1000)
             response.export_button.click()
         
         # Obtiene la información de la descarga
@@ -382,7 +554,6 @@ def click_final_export_button(page, headless=False):
         download = download_info.value
         
         # Crea el directorio de descargas si no existe (para modo headless)
-        import os
         if headless:
             print("Creando directorio de descargas...")
             downloads_dir = "./downloads"
@@ -396,19 +567,19 @@ def click_final_export_button(page, headless=False):
         print("Guardando archivo descargado...")
         download.save_as(save_path)
         print(f"Archivo descargado: {download.suggested_filename}")
-        print(f"Guardado en: {save_path}\n")
+        print(f"Guardado en: {save_path}")
         
         return True, save_path
-    else:
-        print("No se pudo encontrar el botón final de Exportar\n")
-        return False, None
+        
+    except Exception as e:
+        raise Exception(f"Error en la descarga final: {e}")
 
 
 def main(headless=False):
     """
     Función principal que orquesta el inicio de sesión y las acciones posteriores
     """
-    print("\nIniciando proceso de automatización...")
+    print("\nIniciando proceso de automatización (AgentQL optimizado)...")
     
     # Inicializa variables para el manejo de recursos
     browser = None
@@ -504,7 +675,7 @@ def test_excel_parsing():
 async def root():
     """Endpoint raíz con información de la API"""
     return {
-        "message": "Cencosud Catalogados API",
+        "message": "Cencosud Catalogados API (AgentQL Optimized)",
         "version": "1.0.0",
         "endpoints": {
             "GET /api/cencosud": "Obtiene datos existentes (sin scraping)",
@@ -520,7 +691,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "service": "cencosud-catalogados-api"
+        "service": "cencosud-catalogados-api-agentql-optimized"
     }
 
 
@@ -579,7 +750,7 @@ async def scrape_and_get_catalogados_data():
     POST: Ejecuta scraping completo y retorna los datos actualizados
     """
     try:
-        print("POST /api/cencosud - Ejecutando scraping completo...")
+        print("POST /api/cencosud - Ejecutando scraping completo (AgentQL optimizado)...")
         
         # Ejecuta el proceso de scraping en un hilo separado para evitar conflictos asyncio
         loop = asyncio.get_event_loop()
@@ -624,7 +795,8 @@ async def scrape_and_get_catalogados_data():
 
 def start_server():
     """Inicia el servidor FastAPI"""
-    port = 8000
+    port = 8000  # Fixed port for Railway
+    print(f"Starting server on port: {port}")
     uvicorn.run(
         app,
         host="0.0.0.0",
@@ -658,7 +830,7 @@ if __name__ == "__main__":
     
     # Detecta si se quiere ejecutar como API o como script
     if len(sys.argv) > 1 and sys.argv[1] == "--api":
-        print("\n=== INICIANDO CENCOSUD CATALOGADOS API ===\n")
+        print("\n=== INICIANDO CENCOSUD CATALOGADOS API (AgentQL Optimized) ===\n")
         print("API disponible en: http://localhost:8000")
         print("Documentación: http://localhost:8000/docs")
         print("Endpoints:")
@@ -668,7 +840,7 @@ if __name__ == "__main__":
         
         start_server()
     else:
-        print("\n=== INICIO DEL PROCESO DE AUTOMATIZACIÓN ===\n")
+        print("\n=== INICIO DEL PROCESO DE AUTOMATIZACIÓN (AgentQL Optimized) ===\n")
         print("Ejecutando en modo script...")
         print("Para ejecutar como API, use: python scrapper.py --api\n")
         
