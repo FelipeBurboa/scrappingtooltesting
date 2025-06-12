@@ -5,3 +5,4 @@ env
 __pycache__
 llaima-ml.pem
 test.http
+venv
