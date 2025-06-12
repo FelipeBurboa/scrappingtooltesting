@@ -21,8 +21,8 @@ print("Variables de entorno cargadas correctamente")
 
 # Inicializa FastAPI
 app = FastAPI(
-    title="Cencosud Catalogados API",
-    description="API para obtener datos de catalogados de Cencosud mediante scraping",
+    title="Cencosud Data API",
+    description="API para obtener datos de Catalogados y Stock Detalle de Cencosud mediante scraping",
     version="1.0.0"
 )
 
@@ -65,6 +65,16 @@ def parse_excel_to_json(excel_file_path, output_json_path=None):
         
         # Limpia los nombres de las columnas (elimina espacios extra)
         df.columns = df.columns.str.strip()
+        
+        # NUEVA LÍNEA: Skip first row if it's exactly "Total" 
+        if len(df) > 0:
+            first_row = df.iloc[0]
+            # Check if the first column (usually "Día") contains exactly "Total"
+            first_value = str(first_row.iloc[0]).strip().lower() if len(first_row) > 0 else ""
+            if first_value == 'total':
+                print("🗑️ Skipping first row (Total row detected)")
+                df = df.iloc[1:].reset_index(drop=True)
+                print(f"Filas después de skip: {len(df)}")
         
         # Convierte el DataFrame a una lista de diccionarios
         print("Convirtiendo datos a formato JSON...")
@@ -145,6 +155,36 @@ def find_latest_catalogados_file():
     return latest_file
 
 
+def find_latest_stockdetalle_file():
+    """
+    Busca el archivo de stock detalle más reciente en la carpeta downloads
+    
+    Returns:
+        str: Ruta al archivo encontrado o None si no se encuentra
+    """
+    downloads_dir = "./downloads"
+    
+    if not os.path.exists(downloads_dir):
+        print(f"Error: La carpeta {downloads_dir} no existe")
+        return None
+    
+    # Busca archivos que contengan "stockdetalle" o "stock_detalle" en el nombre
+    stockdetalle_files = []
+    for filename in os.listdir(downloads_dir):
+        if ("stockdetalle" in filename.lower() or "stock_detalle" in filename.lower()) and filename.endswith('.xlsx'):
+            file_path = os.path.join(downloads_dir, filename)
+            stockdetalle_files.append((file_path, os.path.getmtime(file_path)))
+    
+    if not stockdetalle_files:
+        print("No se encontraron archivos de stock detalle en la carpeta downloads")
+        return None
+    
+    # Retorna el archivo más reciente
+    latest_file = max(stockdetalle_files, key=lambda x: x[1])[0]
+    print(f"Archivo de stock detalle encontrado: {latest_file}")
+    return latest_file
+
+
 def wait_for_agentql_element_fast(page, query, max_retries=3, wait_time=2):
     """
     OPTIMIZED: Faster AgentQL element detection with reduced waits
@@ -195,7 +235,7 @@ def enhanced_browser_setup_fast(headless=False):
     
     browser = playwright.chromium.launch(
         headless=headless,
-        args=[
+          args=[
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
@@ -209,10 +249,9 @@ def enhanced_browser_setup_fast(headless=False):
             '--no-first-run',
             '--no-default-browser-check',
             '--single-process',
-            # OPTIMIZED: Performance flags
             '--disable-extensions',
             '--disable-plugins',
-            '--disable-images',  # Skip images for faster loading
+            '--disable-images',
             '--disable-javascript-harmony-shipping',
             '--disable-ipc-flooding-protection'
         ]
@@ -308,7 +347,7 @@ def login(headless=False):
 
 def click_catalogados_report(page):
     """
-    OPTIMIZED: Faster report detection
+    OPTIMIZED: Faster report detection for Catalogados
     """
     print("\nNavegando al reporte de Catalogados (optimizado)...")
     
@@ -349,6 +388,59 @@ def click_catalogados_report(page):
     page.goto(catalogados_url, wait_until='domcontentloaded', timeout=30000)
     page.wait_for_timeout(3000)
     print("✓ Navegación directa exitosa")
+
+
+def click_stockdetalle_report(page):
+    """
+    OPTIMIZED: Faster report detection for Stock Detalle
+    """
+    print("\nNavegando al reporte de Stock Detalle (optimizado)...")
+    
+    # OPTIMIZED: Skip networkidle wait, go straight to detection
+    page.wait_for_timeout(3000)  # Reduced from 10s to 3s
+    
+    # Try the most successful strategy first
+    STOCKDETALLE_REPORT_QUERY = """
+    {
+        stockdetalle_link(link containing "Maestra - Stock Detalle" or "Stock Detalle" text)
+    }
+    """
+    
+    print("Buscando enlace al reporte de Stock Detalle...")
+    response = wait_for_agentql_element_fast(page, STOCKDETALLE_REPORT_QUERY, max_retries=2, wait_time=2)
+    
+    if response and hasattr(response, 'stockdetalle_link') and response.stockdetalle_link:
+        print("✓ Enlace de Stock Detalle encontrado")
+        print("Haciendo clic en el enlace...")
+        response.stockdetalle_link.click()
+        
+        # OPTIMIZED: Wait for URL change instead of networkidle
+        try:
+            page.wait_for_timeout(5000)  # Wait for navigation
+            print("✓ Reporte de Stock Detalle cargado")
+        except:
+            print("⚠️ Esperando un poco más...")
+            page.wait_for_timeout(5000)
+        return
+    
+    # Fallback: Try alternative query
+    print("⚠️ Probando búsqueda alternativa...")
+    ALTERNATIVE_QUERY = """
+    {
+        stock_link(link containing "Stock" text)
+    }
+    """
+    
+    response = wait_for_agentql_element_fast(page, ALTERNATIVE_QUERY, max_retries=2, wait_time=2)
+    
+    if response and hasattr(response, 'stock_link') and response.stock_link:
+        print("✓ Enlace de Stock encontrado (alternativo)")
+        response.stock_link.click()
+        page.wait_for_timeout(5000)
+        print("✓ Navegación alternativa exitosa")
+        return
+    
+    raise Exception("No se pudo encontrar el enlace al reporte de Stock Detalle")
 
 
 def select_all_cadenas(page):
@@ -497,11 +589,11 @@ def click_export_to_excel(page):
     raise Exception("No se pudo encontrar Export to Excel")
 
 
-def click_final_export_button(page, headless=False):
+def click_final_export_button(page, headless=False, report_type="catalogados"):
     """
-    OPTIMIZED: Faster final export
+    OPTIMIZED: Faster final export with report type specific naming
     """
-    print("\nIniciando descarga (optimizado)...")
+    print(f"\nIniciando descarga de {report_type} (optimizado)...")
     
     page.wait_for_timeout(1000)  # Reduced from 3s to 1s
     
@@ -542,9 +634,9 @@ def click_final_export_button(page, headless=False):
             downloads_dir = "./downloads"
             if not os.path.exists(downloads_dir):
                 os.makedirs(downloads_dir)
-            save_path = os.path.join(downloads_dir, f"catalogados_report_{download.suggested_filename}")
+            save_path = os.path.join(downloads_dir, f"{report_type}_report_{download.suggested_filename}")
         else:
-            save_path = f"catalogados_report_{download.suggested_filename}"
+            save_path = f"{report_type}_report_{download.suggested_filename}"
         
         download.save_as(save_path)
         print(f"✓ Archivo guardado: {save_path}")
@@ -555,11 +647,11 @@ def click_final_export_button(page, headless=False):
         raise Exception(f"Error en la descarga: {e}")
 
 
-def main(headless=False):
+def main_catalogados(headless=False):
     """
-    OPTIMIZED: Main function with faster execution
+    OPTIMIZED: Main function for Catalogados with faster execution
     """
-    print("\nIniciando proceso optimizado...")
+    print("\nIniciando proceso optimizado para Catalogados...")
     
     browser = None
     playwright = None
@@ -569,7 +661,7 @@ def main(headless=False):
         print("\nPASO 1: Login...")
         page, browser, playwright, context = login(headless=headless)
         
-        print("\nPASO 2: Navegando al reporte...")
+        print("\nPASO 2: Navegando al reporte de Catalogados...")
         click_catalogados_report(page)
         
         print("\nPASO 3: Seleccionando cadenas...")
@@ -583,10 +675,10 @@ def main(headless=False):
         click_export_to_excel(page)
         
         print("\nPASO 6: Descargando...")
-        success, download_path = click_final_export_button(page, headless=headless)
+        success, download_path = click_final_export_button(page, headless=headless, report_type="catalogados")
         
         if success:
-            print(f"\n✓ Proceso completado: {download_path}")
+            print(f"\n✓ Proceso de Catalogados completado: {download_path}")
             return download_path
         else:
             raise Exception("Descarga falló")
@@ -601,6 +693,61 @@ def main(headless=False):
             browser.close()
         if playwright:
             playwright.stop()
+
+
+def main_stockdetalle(headless=False):
+    """
+    OPTIMIZED: Main function for Stock Detalle with faster execution
+    """
+    print("\nIniciando proceso optimizado para Stock Detalle...")
+    
+    browser = None
+    playwright = None
+    
+    try:
+        # All steps with optimized timing
+        print("\nPASO 1: Login...")
+        page, browser, playwright, context = login(headless=headless)
+        
+        print("\nPASO 2: Navegando al reporte de Stock Detalle...")
+        click_stockdetalle_report(page)
+        
+        print("\nPASO 3: Seleccionando cadenas...")
+        select_all_cadenas(page)
+        
+        print("\nPASO 4: Ejecutando reporte...")
+        click_run_button(page)
+        
+        print("\nPASO 5: Iniciando exportación...")
+        click_share_button(page)
+        click_export_to_excel(page)
+        
+        print("\nPASO 6: Descargando...")
+        success, download_path = click_final_export_button(page, headless=headless, report_type="stockdetalle")
+        
+        if success:
+            print(f"\n✓ Proceso de Stock Detalle completado: {download_path}")
+            return download_path
+        else:
+            raise Exception("Descarga falló")
+        
+    except Exception as e:
+        print(f"\nError: {e}")
+        raise e
+        
+    finally:
+        print("\nLimpiando recursos...")
+        if browser:
+            browser.close()
+        if playwright:
+            playwright.stop()
+
+
+def main(headless=False):
+    """
+    OPTIMIZED: Main function with faster execution (backwards compatibility)
+    """
+    return main_catalogados(headless)
 
 
 def test_excel_parsing():
@@ -626,6 +773,29 @@ def test_excel_parsing():
         return None
 
 
+def test_stockdetalle_parsing():
+    """
+    Función de prueba para convertir el Excel de Stock Detalle a JSON
+    """
+    print("\n=== CONVERSIÓN STOCK DETALLE EXCEL TO JSON ===")
+    
+    excel_file = find_latest_stockdetalle_file()
+    
+    if excel_file:
+        output_json = "./downloads/stockdetalle_data.json"
+        json_data = parse_excel_to_json(excel_file, output_json)
+        
+        if json_data:
+            print(f"✓ Conversión exitosa: {len(json_data)} registros")
+            return json_data
+        else:
+            print("✗ Error en la conversión")
+            return None
+    else:
+        print("✗ No se encontró archivo Excel de Stock Detalle")
+        return None
+
+
 # ========================
 # API ENDPOINTS
 # ========================
@@ -634,11 +804,13 @@ def test_excel_parsing():
 async def root():
     """Endpoint raíz con información de la API"""
     return {
-        "message": "Cencosud Catalogados API (Optimized)",
+        "message": "Cencosud Data API (Optimized)",
         "version": "1.0.0",
         "endpoints": {
-            "GET /api/cencosud": "Obtiene datos existentes (sin scraping)",
-            "POST /api/cencosud": "Ejecuta scraping y retorna datos actualizados",
+            "GET /api/cencosud/catalogados": "Obtiene datos de catalogados existentes (sin scraping)",
+            "POST /api/cencosud/catalogados": "Ejecuta scraping de catalogados y retorna datos actualizados",
+            "GET /api/cencosud/stocksdetalle": "Obtiene datos de stock detalle existentes (sin scraping)",
+            "POST /api/cencosud/stocksdetalle": "Ejecuta scraping de stock detalle y retorna datos actualizados",
             "GET /health": "Estado de salud de la API"
         }
     }
@@ -650,17 +822,17 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "service": "cencosud-catalogados-api-optimized"
+        "service": "cencosud-data-api-optimized"
     }
 
 
-@app.get("/api/cencosud")
+@app.get("/api/cencosud/catalogados")
 async def get_catalogados_data():
     """
-    GET: Retorna los datos existentes sin ejecutar scraping
+    GET: Retorna los datos de catalogados existentes sin ejecutar scraping
     """
     try:
-        print("GET /api/cencosud - Obteniendo datos existentes...")
+        print("GET /api/cencosud/catalogados - Obteniendo datos existentes...")
         
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as executor:
@@ -682,14 +854,15 @@ async def get_catalogados_data():
             )
         
         if not json_data:
-            raise HTTPException(status_code=500, detail="Error al procesar el archivo Excel")
+            raise HTTPException(status_code=500, detail="Error al procesar el archivo Excel de catalogados")
         
         return JSONResponse(
             content={
                 "status": "success",
-                "message": "Datos obtenidos exitosamente",
+                "message": "Datos de catalogados obtenidos exitosamente",
                 "timestamp": datetime.now().isoformat(),
                 "source": "existing_file",
+                "report_type": "catalogados",
                 "total_records": len(json_data),
                 "data": json_data
             }
@@ -701,36 +874,37 @@ async def get_catalogados_data():
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
-@app.post("/api/cencosud")
+@app.post("/api/cencosud/catalogados")
 async def scrape_and_get_catalogados_data():
     """
-    POST: Ejecuta scraping completo y retorna los datos actualizados
+    POST: Ejecuta scraping de catalogados completo y retorna los datos actualizados
     """
     try:
-        print("POST /api/cencosud - Ejecutando scraping optimizado...")
+        print("POST /api/cencosud/catalogados - Ejecutando scraping optimizado...")
         
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as executor:
             download_path = await loop.run_in_executor(
                 executor,
-                lambda: main(headless=True)
+                lambda: main_catalogados(headless=True)
             )
         
         if not download_path or not os.path.exists(download_path):
-            raise HTTPException(status_code=500, detail="El scraping no pudo descargar el archivo")
+            raise HTTPException(status_code=500, detail="El scraping de catalogados no pudo descargar el archivo")
         
         output_json_path = "./downloads/catalogados_data.json"
         json_data = parse_excel_to_json(download_path, output_json_path)
         
         if not json_data:
-            raise HTTPException(status_code=500, detail="Error al convertir el archivo Excel a JSON")
+            raise HTTPException(status_code=500, detail="Error al convertir el archivo Excel de catalogados a JSON")
         
         return JSONResponse(
             content={
                 "status": "success",
-                "message": "Scraping optimizado completado exitosamente",
+                "message": "Scraping de catalogados optimizado completado exitosamente",
                 "timestamp": datetime.now().isoformat(),
                 "source": "fresh_scraping",
+                "report_type": "catalogados",
                 "total_records": len(json_data),
                 "file_saved": output_json_path,
                 "data": json_data
@@ -740,7 +914,99 @@ async def scrape_and_get_catalogados_data():
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error en scraping: {str(e)}")
+        print(f"Error en scraping de catalogados: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+
+@app.get("/api/cencosud/stocksdetalle")
+async def get_stocksdetalle_data():
+    """
+    GET: Retorna los datos de stock detalle existentes sin ejecutar scraping
+    """
+    try:
+        print("GET /api/cencosud/stocksdetalle - Obteniendo datos existentes...")
+        
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            excel_file = await loop.run_in_executor(
+                executor,
+                find_latest_stockdetalle_file
+            )
+        
+        if not excel_file:
+            raise HTTPException(
+                status_code=404, 
+                detail="No se encontró archivo de stock detalle. Ejecute POST primero para generar datos."
+            )
+        
+        with ThreadPoolExecutor() as executor:
+            json_data = await loop.run_in_executor(
+                executor,
+                lambda: parse_excel_to_json(excel_file)
+            )
+        
+        if not json_data:
+            raise HTTPException(status_code=500, detail="Error al procesar el archivo Excel de stock detalle")
+        
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": "Datos de stock detalle obtenidos exitosamente",
+                "timestamp": datetime.now().isoformat(),
+                "source": "existing_file",
+                "report_type": "stocksdetalle",
+                "total_records": len(json_data),
+                "data": json_data
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+
+@app.post("/api/cencosud/stocksdetalle")
+async def scrape_and_get_stocksdetalle_data():
+    """
+    POST: Ejecuta scraping de stock detalle completo y retorna los datos actualizados
+    """
+    try:
+        print("POST /api/cencosud/stocksdetalle - Ejecutando scraping optimizado...")
+        
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            download_path = await loop.run_in_executor(
+                executor,
+                lambda: main_stockdetalle(headless=True)
+            )
+        
+        if not download_path or not os.path.exists(download_path):
+            raise HTTPException(status_code=500, detail="El scraping de stock detalle no pudo descargar el archivo")
+        
+        output_json_path = "./downloads/stockdetalle_data.json"
+        json_data = parse_excel_to_json(download_path, output_json_path)
+        
+        if not json_data:
+            raise HTTPException(status_code=500, detail="Error al convertir el archivo Excel de stock detalle a JSON")
+        
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": "Scraping de stock detalle optimizado completado exitosamente",
+                "timestamp": datetime.now().isoformat(),
+                "source": "fresh_scraping",
+                "report_type": "stocksdetalle",
+                "total_records": len(json_data),
+                "file_saved": output_json_path,
+                "data": json_data
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error en scraping de stock detalle: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
@@ -764,34 +1030,59 @@ def run_script_mode():
     """Ejecuta en modo script (sin API)"""
     try:
         print("Iniciando proceso optimizado completo...")
-        main(headless=True)
-        print("\nScraping completado. Convirtiendo...")
+        main_catalogados(headless=True)
+        print("\nScraping de catalogados completado. Convirtiendo...")
         test_excel_parsing()
         
     except Exception as e:
-        print(f"Error en el proceso: {e}")
+        print(f"Error en el proceso de catalogados: {e}")
         print("Intentando conversión del archivo existente...")
         test_excel_parsing()
+
+
+def run_stockdetalle_script_mode():
+    """Ejecuta en modo script para Stock Detalle (sin API)"""
+    try:
+        print("Iniciando proceso optimizado de Stock Detalle...")
+        main_stockdetalle(headless=True)
+        print("\nScraping de Stock Detalle completado. Convirtiendo...")
+        test_stockdetalle_parsing()
+        
+    except Exception as e:
+        print(f"Error en el proceso de Stock Detalle: {e}")
+        print("Intentando conversión del archivo existente...")
+        test_stockdetalle_parsing()
 
 
 if __name__ == "__main__":
     import sys
     
     if len(sys.argv) > 1 and sys.argv[1] == "--api":
-        print("\n=== CENCOSUD CATALOGADOS API (OPTIMIZED) ===\n")
+        print("\n=== CENCOSUD DATA API (OPTIMIZED) ===\n")
         print("API disponible en: http://localhost:8000")
         print("Documentación: http://localhost:8000/docs")
         print("Endpoints:")
-        print("  GET  /api/cencosud  - Obtener datos existentes")
-        print("  POST /api/cencosud  - Scraping optimizado + datos actualizados")
+        print("  GET  /api/cencosud/catalogados     - Obtener datos de catalogados existentes")
+        print("  POST /api/cencosud/catalogados     - Scraping optimizado + datos de catalogados actualizados")  
+        print("  GET  /api/cencosud/stocksdetalle   - Obtener datos de stock detalle existentes")
+        print("  POST /api/cencosud/stocksdetalle   - Scraping optimizado + datos de stock detalle actualizados")
         print("\nPresiona Ctrl+C para detener el servidor\n")
         
         start_server()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--stockdetalle":
+        print("\n=== PROCESO OPTIMIZADO STOCK DETALLE ===\n")
+        print("Ejecutando en modo script optimizado para Stock Detalle...")
+        print("Para ejecutar como API, use: python scrapper.py --api\n")
+        
+        run_stockdetalle_script_mode()
+        
+        print("\n=== FIN DEL PROCESO OPTIMIZADO STOCK DETALLE ===\n")
     else:
-        print("\n=== PROCESO OPTIMIZADO ===\n")
-        print("Ejecutando en modo script optimizado...")
+        print("\n=== PROCESO OPTIMIZADO CATALOGADOS ===\n")
+        print("Ejecutando en modo script optimizado para Catalogados...")
+        print("Para ejecutar Stock Detalle, use: python scrapper.py --stockdetalle")
         print("Para ejecutar como API, use: python scrapper.py --api\n")
         
         run_script_mode()
         
-        print("\n=== FIN DEL PROCESO OPTIMIZADO ===\n")
+        print("\n=== FIN DEL PROCESO OPTIMIZADO CATALOGADOS ===\n")
