@@ -123,7 +123,7 @@ def run_catalogados_script_mode():
         excel_file = find_latest_catalogados_file()
         if excel_file:
             output_json = f"{DOWNLOADS_DIR}/catalogados_data.json"
-            json_data = parse_excel_to_json(excel_file, output_json)
+            json_data = parse_excel_to_json(excel_file, output_json, report_type='catalogados')
             if json_data:
                 print(f"✓ Conversión exitosa: {len(json_data)} registros")
         
@@ -133,7 +133,7 @@ def run_catalogados_script_mode():
         excel_file = find_latest_catalogados_file()
         if excel_file:
             output_json = f"{DOWNLOADS_DIR}/catalogados_data.json"
-            parse_excel_to_json(excel_file, output_json)
+            parse_excel_to_json(excel_file, output_json, report_type='catalogados')
 
 
 @router.get("/catalogados")
@@ -160,7 +160,7 @@ async def get_catalogados_data():
         with ThreadPoolExecutor() as executor:
             json_data = await loop.run_in_executor(
                 executor,
-                lambda: parse_excel_to_json(excel_file)
+                lambda: parse_excel_to_json(excel_file, report_type='catalogados')
             )
         
         if not json_data:
@@ -203,7 +203,7 @@ async def scrape_and_get_catalogados_data():
             raise HTTPException(status_code=500, detail="El scraping de catalogados no pudo descargar el archivo")
         
         output_json_path = f"{DOWNLOADS_DIR}/catalogados_data.json"
-        json_data = parse_excel_to_json(download_path, output_json_path)
+        json_data = parse_excel_to_json(download_path, output_json_path, report_type='catalogados')
         
         if not json_data:
             raise HTTPException(status_code=500, detail="Error al convertir el archivo Excel de catalogados a JSON")

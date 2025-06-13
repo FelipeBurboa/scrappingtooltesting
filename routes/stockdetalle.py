@@ -131,7 +131,7 @@ def run_stockdetalle_script_mode():
         excel_file = find_latest_stockdetalle_file()
         if excel_file:
             output_json = f"{DOWNLOADS_DIR}/stockdetalle_data.json"
-            json_data = parse_excel_to_json(excel_file, output_json)
+            json_data = parse_excel_to_json(excel_file, output_json, report_type='stockdetalle')
             if json_data:
                 print(f"✓ Conversión exitosa: {len(json_data)} registros")
         
@@ -141,7 +141,7 @@ def run_stockdetalle_script_mode():
         excel_file = find_latest_stockdetalle_file()
         if excel_file:
             output_json = f"{DOWNLOADS_DIR}/stockdetalle_data.json"
-            parse_excel_to_json(excel_file, output_json)
+            parse_excel_to_json(excel_file, output_json, report_type='stockdetalle')
 
 
 @router.get("/stocksdetalle")
@@ -168,7 +168,7 @@ async def get_stocksdetalle_data():
         with ThreadPoolExecutor() as executor:
             json_data = await loop.run_in_executor(
                 executor,
-                lambda: parse_excel_to_json(excel_file)
+                lambda: parse_excel_to_json(excel_file, report_type='stockdetalle')
             )
         
         if not json_data:
@@ -211,7 +211,7 @@ async def scrape_and_get_stocksdetalle_data():
             raise HTTPException(status_code=500, detail="El scraping de stock detalle no pudo descargar el archivo")
         
         output_json_path = f"{DOWNLOADS_DIR}/stockdetalle_data.json"
-        json_data = parse_excel_to_json(download_path, output_json_path)
+        json_data = parse_excel_to_json(download_path, output_json_path, report_type='stockdetalle')
         
         if not json_data:
             raise HTTPException(status_code=500, detail="Error al convertir el archivo Excel de stock detalle a JSON")
