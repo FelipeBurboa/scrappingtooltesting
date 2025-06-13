@@ -1016,7 +1016,7 @@ async def scrape_and_get_stocksdetalle_data():
 
 def start_server():
     """Inicia el servidor FastAPI"""
-    port = 8000  # Fixed port for Railway
+    port = 3000  # Fixed port for Railway
     print(f"Starting optimized server on port: {port}")
     uvicorn.run(
         app,
@@ -1059,8 +1059,8 @@ if __name__ == "__main__":
     
     if len(sys.argv) > 1 and sys.argv[1] == "--api":
         print("\n=== CENCOSUD DATA API (OPTIMIZED) ===\n")
-        print("API disponible en: http://localhost:8000")
-        print("Documentación: http://localhost:8000/docs")
+        print("API disponible en: http://localhost:3000")
+        print("Documentación: http://localhost:3000/docs")
         print("Endpoints:")
         print("  GET  /api/cencosud/catalogados     - Obtener datos de catalogados existentes")
         print("  POST /api/cencosud/catalogados     - Scraping optimizado + datos de catalogados actualizados")  
