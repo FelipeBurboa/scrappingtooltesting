@@ -32,7 +32,7 @@ def click_catalogados_report(page):
     # Try the most successful strategy first
     CATALOGADOS_REPORT_QUERY = """
     {
-        catalogados_link(link containing "Maestra - Catalogados" text)
+        catalogados_link(link containing "Maestra - Catalogados BU" text)
     }
     """
     

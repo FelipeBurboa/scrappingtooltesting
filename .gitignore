@@ -6,3 +6,4 @@ __pycache__
 llaima-ml.pem
 test.http
 venv
+data.txt

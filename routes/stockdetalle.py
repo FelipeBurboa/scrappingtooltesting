@@ -31,8 +31,8 @@ def click_stockdetalle_report(page):
     
     # Try the most successful strategy first
     STOCKDETALLE_REPORT_QUERY = """
-    {
-        stockdetalle_link(link containing "Maestra - Stock Detalle" or "Stock Detalle" text)
+   {
+        stockdetalle_link(link containing "Maestra - Stock Detalle" text)
     }
     """
     
